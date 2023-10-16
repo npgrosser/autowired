@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
 from types import FunctionType
-from typing import TypeVar, Any, Type, Callable, Optional, Union
+from typing import TypeVar, Any, Type, Callable, Optional, Union, List, Dict
 
 try:  # pragma: no cover
     # noinspection PyPackageRequirements
@@ -14,11 +14,10 @@ try:  # pragma: no cover
 except ImportError:  # pragma: no cover
     import logging
 
-
+    # noinspection PyMethodMayBeStatic
     class _SimpleLogger:
         def trace(self, msg: str):
             logging.debug(msg)
-
 
     logger = _SimpleLogger()
 
@@ -30,7 +29,7 @@ def _camel_to_snake(name: str) -> str:
     return re.sub("([a-z0-9])([A-Z])", r"\1_\2", name).lower()
 
 
-def _group_by(key_fn: Callable[[Any], Any], items: list[Any]) -> dict[Any, list[Any]]:
+def _group_by(key_fn: Callable[[Any], Any], items: List[Any]) -> Dict[Any, List[Any]]:
     result = {}
     for item in items:
         key = key_fn(item)
@@ -189,9 +188,9 @@ class NotProvidedException(AutowiredException):
 _illegal_module_names = ["builtins", "typing", "dataclasses", "abc"]
 
 
-def _get_actual_init(t: type[_T]) -> Optional[FunctionType]:
+def _get_actual_init(t: type) -> Optional[FunctionType]:
     if "__init__" in t.__dict__:
-        return t.__init__
+        return getattr(t, "__init__")
     else:
         for base in t.__bases__:
             if base == object:
@@ -202,7 +201,7 @@ def _get_actual_init(t: type[_T]) -> Optional[FunctionType]:
         return None
 
 
-def _get_dependencies_for_type(t: type[_T]) -> list[Dependency]:
+def _get_dependencies_for_type(t: type) -> List[Dependency]:
     init = _get_actual_init(t)
 
     if init:
@@ -215,27 +214,12 @@ def _get_dependencies_for_type(t: type[_T]) -> list[Dependency]:
     return []
 
 
-# def _get_dependencies_for_type(t: type[_T]) -> list[Dependency]:
-#     if "__init__" in t.__dict__:
-#         init = t.__init__
-#         if isinstance(init, FunctionType):
-#             sig = inspect.signature(init)
-#             return [
-#                 Dependency(
-#                     name, param.annotation, param.default == inspect.Parameter.empty
-#                 )
-#                 for name, param in sig.parameters.items()
-#                 if name != "self"
-#             ]
-#     return []
-
-
 class Container:
     """
     A container for resolving and storing dependencies.
     """
 
-    _beans: list[Bean]
+    _beans: List[Bean]
 
     def __init__(self):
         self._beans = []
@@ -265,8 +249,9 @@ class Container:
                 return by_name[dependency.name][0]
             else:
                 raise AmbiguousDependencyException(
-                    f"Failed to resolve dependency {dependency.name} of type {dependency.type.__name__}. "
-                    f"Multiple candidates found: {candidates}"
+                    f"Failed to resolve dependency {dependency.name}"
+                    f" of type {dependency.type.__name__}."
+                    f" Multiple candidates found: {candidates}"
                 )
 
         return None
@@ -286,7 +271,7 @@ class Container:
     def unregister(self, name: str):
         self._beans = [r for r in self._beans if r.name != name]
 
-    def resolve(self, dependency: Union[Dependency, type[_T]]) -> _T:
+    def resolve(self, dependency: Union[Dependency, Type[_T]]) -> _T:
         if not isinstance(dependency, Dependency):
             logger.trace(f"Resolving type {dependency.__name__} for container {self}")
             dependency = Dependency(
@@ -310,9 +295,9 @@ class Container:
         return result
 
     def autowire(
-            self,
-            t: type[_T],
-            **explicit_kw_args,
+        self,
+        t: Type[_T],
+        **explicit_kw_args,
     ) -> _T:
         logger.trace(
             f"Auto-wiring {t.__name__} with {len(explicit_kw_args)} explicit args"
@@ -359,26 +344,26 @@ class _ContextProperty(ABC):
 @dataclass
 class _Autowired(_ContextProperty):
     eager: bool
-    kw_args_factory: Callable[["Context"], dict[str, Any]]
-    kw_args: dict[str, Any]
+    kw_args_factory: Callable[["Context"], Dict[str, Any]]
+    kw_args: Dict[str, Any]
 
-    def get_all_kw_args(self, ctx: "Context") -> dict[str, Any]:
+    def get_all_kw_args(self, ctx: "Context") -> Dict[str, Any]:
         explicit_kw_args = self.kw_args_factory(ctx) if self.kw_args_factory else {}
         explicit_kw_args.update(self.kw_args)
         return explicit_kw_args
 
 
 def autowired(
-        kw_args_factory: Callable[[], dict[str, Any]] = None,
-        *,
-        eager: bool = False,
-        **kw_args,
+    kw_args_factory: Callable[[], Dict[str, Any]] = None,
+    *,
+    eager: bool = False,
+    **kw_args,
 ) -> Any:
     """
     Marks a field as autowired.
     Auto-wired fields are converted to cached properties on the class.
     :param eager: eagerly initialize the field on object creation
-    :param kw_args_factory: a function that returns a dict of keyword arguments for initialization of the field
+    :param kw_args_factory: return a dict of keyword arguments for initialization of the field
     :param kw_args: keyword arguments for initialization of the field
     :return:
     """
@@ -397,7 +382,8 @@ def _get_field_type(field_name: str, obj: Any) -> type:
     field_type = obj.__annotations__.get(field_name, None)
     if field_type is None:
         raise MissingTypeAnnotation(
-            f"Cannot determine type of field {type(obj).__name__}.{field_name}")
+            f"Cannot determine type of field {type(obj).__name__}.{field_name}"
+        )
 
     return field_type
 
@@ -447,16 +433,14 @@ class _ContextMeta(type):
 
         result = super().__new__(mcs, name, bases, class_dict)
 
-        def __getattribute__(self, name):
-            attr_value = super(result, self).__getattribute__(name)
+        def __getattribute__(self, item):
+            attr_value = super(result, self).__getattribute__(item)
 
             if not isinstance(attr_value, _Autowired):
                 return attr_value
 
-            autowired = attr_value
-
-            value = _resolve_autowired_field(name, autowired, self)
-            self.__dict__[name] = value
+            value = _resolve_autowired_field(item, attr_value, self)
+            self.__dict__[item] = value
             return value
 
         result.__getattribute__ = __getattribute__
@@ -464,7 +448,7 @@ class _ContextMeta(type):
         return result
 
 
-def _get_obj_properties(self) -> list[PropertyInfo]:
+def _get_obj_properties(self) -> List[PropertyInfo]:
     properties = []
     for name, attr in inspect.getmembers(type(self)):
         is_cached_property = isinstance(attr, cached_property)
@@ -503,7 +487,7 @@ class Context(metaclass=_ContextMeta):
 
         return container
 
-    def autowire(self, t: Union[type[_T], type], **explicit_kw_args) -> _T:
+    def autowire(self, t: Union[Type[_T], type], **explicit_kw_args) -> _T:
         return self.container.autowire(t, **explicit_kw_args)
 
 
