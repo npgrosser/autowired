@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="autowired",
-    version="0.1.1",
+    version="0.1.2",
     description="A minimalistic dependency injection library for Python",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
@@ -12,4 +12,5 @@ setup(
     license="MIT",
     packages=find_packages(),
     install_requires=[],
+    python_requires=">=3.8",
 )
