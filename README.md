@@ -60,17 +60,19 @@ if __name__ == "__main__":
 
 ```
 
-A context's `autowired()` fields and their dependencies are resolved automatically on the first access.
+A context's `autowired` fields and their dependencies are resolved automatically on first access.
 
 Note that all the components (services, controllers, etc.) are neither aware of the context nor the
 existence of the _autowired_ library. They are regular classes, and don't care about how they are instantiated.
 That is a fundamental design principle of _autowired_.
 Wiring things together is the sole responsibility of the context and its dependency container.
 
-In the above example, the complete control of creating the components is delegated to the library.
-However, you can also instantiate components by hand, using `cached_property` or `property` methods.
-You only have to make sure that these properties are properly annotated with their return types.
-_autowired_ will respect these properties when resolving dependencies of other components.
+In the above example, the complete control of creating the actual component instances is delegated to the library.
+However, you can also instantiate components by hand, using a `cached_property` method on the context class.
+
+The `cached_property` decorator is first-class citizen in _autowired_.
+They will be registered in the context's dependency container, just like fields defined with `autowired()`.
+You would use them if you need more control over the instantiation of a component.
 
 In the following example, we use a `cached_property` to explicitly instantiate the `UserService` as
 a `CustomUserService`.
@@ -103,68 +105,60 @@ if __name__ == '__main__':
 ## Example with Settings
 
 In most cases, you will want to be able to make the behavior of your application configurable via settings.
-When using _autowired_, the responsibility to evaluate these settings and to instantiate the components accordingly
-should live in the context class.
+As noted above, the context is responsible for wiring things together.
+This makes it the perfect place to evaluate the settings and to pass them to the components as required.
+_autowired_ provides some tools to make this straightforward.
 
 ```python
 from autowired import Context, autowired, cached_property
 from dataclasses import dataclass
 
 
-@dataclass
 class UserService:
-    db_url: str
+    pass
 
 
 @dataclass
 class AuthService:
     secret_key: str
-
-
-@dataclass
-class UserAuthService:
     user_service: UserService
-    auth_service: AuthService
 
 
 @dataclass
 class LoginController:
-    user_auth_service: UserAuthService
+    auth_service: AuthService
 
     def login(self, username: str):
-        print(f"Logging in user {username} via {self.user_auth_service}")
+        print(f"Logging in user {username} via {self.auth_service}")
 
 
 # Create a dataclass to represent your settings
 @dataclass
 class ApplicationSettings:
-    db_url: str
     auth_secret_key: str
 
 
 # Create a context to manage the components
 class ApplicationContext(Context):
-    user_auth_service: UserAuthService = autowired()
     login_controller: LoginController = autowired()
 
     def __init__(self, settings: ApplicationSettings):
         self.settings = settings
 
-    # using cached_property and self.autowire() to override some of the constructor arguments with values from the settings
-
-    @cached_property
-    def user_service(self) -> UserService:
-        return self.autowire(UserService, db_url=self.settings.db_url)
-
+    # using cached_property and self.autowire()
     @cached_property
     def auth_service(self) -> AuthService:
+        # Similar to autowired(), self.autowire() resolves the dependencies of the component automatically.
+        # Besides that, it allows you to pass a subset of the component's dependencies as kwargs.
+        # Here we pass the secret key from our ApplicationSettings to the AuthService and
+        # let the dependency container resolve the remaining dependencies (i.e. the UserService).
         return self.autowire(AuthService, secret_key=self.settings.auth_secret_key)
 
 
 if __name__ == "__main__":
     # load the settings as desired (e.g. using pydantic-settings)
     # For the sake of this example, we just hardcode the settings here
-    settings = ApplicationSettings("sqlite://database.db", "secret")
+    settings = ApplicationSettings(auth_secret_key="secret")
     ctx = ApplicationContext(settings=settings)
     ctx.login_controller.login("admin")
 ```
@@ -176,14 +170,11 @@ The following `ApplicationContext` is equivalent to the previous example.
 # ...
 
 class ApplicationContext(Context):
-    user_auth_service: UserAuthService = autowired()
     login_controller: LoginController = autowired()
+    
     # Here we pass a kwargs factory function to autowired.
     # The factory function will be called with the context instance as its only argument.
     # This allows us to access the settings via self.settings
-    user_service: UserService = autowired(
-        lambda self: dict(db_url=self.settings.db_url)
-    )
     auth_service: AuthService = autowired(
         lambda self: dict(secret_key=self.settings.auth_secret_key)
     )
@@ -209,7 +200,7 @@ A classic example is a request context, that is derived from the application con
 
 @dataclass
 class RequestService:
-    user_auth_service: UserAuthService
+    auth_service: AuthService
 
 
 class RequestContext(Context):
@@ -221,11 +212,11 @@ class RequestContext(Context):
 
 
 if __name__ == "__main__":
-    root_ctx = ApplicationContext(ApplicationSettings("sqlite://database.db", "secret"))
+    root_ctx = ApplicationContext(ApplicationSettings(auth_secret_key="secret"))
     request_ctx = RequestContext(root_ctx)
-    
-    # The user_auth_service should be the same in both contexts
-    assert id(root_ctx.user_auth_service) == id(request_ctx.request_service.user_auth_service)
+
+    # Both contexts should have the same AuthService instance
+    assert id(root_ctx.user_auth_service) == id(request_ctx.request_service.auth_service)
 
 ```
 
@@ -348,9 +339,9 @@ def user_controller():
 
 @app.get("/users/{user_id}")
 def get_user(
-    user_id: int,
-    request_auth_service: RequestAuthService = Depends(request_auth_service),
-    user_controller=Depends(user_controller),
+        user_id: int,
+        request_auth_service: RequestAuthService = Depends(request_auth_service),
+        user_controller=Depends(user_controller),
 ):
     if request_auth_service.is_authorised():
         return user_controller.get_user(user_id=int(user_id))
