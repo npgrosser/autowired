@@ -70,9 +70,10 @@ Wiring things together is the sole responsibility of the context and its depende
 In the above example, the complete control of creating the actual component instances is delegated to the library.
 However, you can also instantiate components by hand, using a `cached_property` method on the context class.
 
-The `cached_property` decorator is first-class citizen in _autowired_.
-They will be registered in the context's dependency container, just like fields defined with `autowired()`.
-You would use them if you need more control over the instantiation of a component.
+The `cached_property` decorator is a first-class citizen in _autowired_.
+The decorated methods will be registered in the context's dependency container, just like fields defined
+with `autowired()`.
+You can make use of this if you need more control over the instantiation of a component.
 
 In the following example, we use a `cached_property` to explicitly instantiate the `UserService` as
 a `CustomUserService`.
@@ -166,12 +167,9 @@ if __name__ == "__main__":
 The following `ApplicationContext` is equivalent to the previous example.
 
 ```python
-
-# ...
-
 class ApplicationContext(Context):
     login_controller: LoginController = autowired()
-    
+
     # Here we pass a kwargs factory function to autowired.
     # The factory function will be called with the context instance as its only argument.
     # This allows us to access the settings via self.settings
@@ -216,7 +214,7 @@ if __name__ == "__main__":
     request_ctx = RequestContext(root_ctx)
 
     # Both contexts should have the same AuthService instance
-    assert id(root_ctx.user_auth_service) == id(request_ctx.request_service.auth_service)
+    assert id(root_ctx.auth_service) == id(request_ctx.request_service.auth_service)
 
 ```
 
@@ -224,7 +222,6 @@ if __name__ == "__main__":
 
 ```python
 from dataclasses import dataclass
-from fastapi import FastAPI, Request, Depends, HTTPException
 from autowired import Context, autowired, cached_property
 
 
@@ -288,7 +285,10 @@ class ApplicationContext(Context):
         return DatabaseService(conn_str=self.settings.database_connection_string)
 
 
-# Request Scoped Service
+from fastapi import FastAPI, Request, Depends, HTTPException
+
+
+# Request Scoped Service for the FastAPI Application
 
 
 class RequestAuthService:
@@ -314,27 +314,27 @@ class RequestContext(Context):
         self.parent_context = parent_context
 
 
-# FastAPI Application
+# Setting up the FastAPI Application
 
 app = FastAPI()
-ctx = ApplicationContext()
+application_context = ApplicationContext()
 
 
 def request_context(r: Request):
     # We manually register the Request object for the request context
     # so that it can be injected into dependent services (e.g. RequestAuthService)
-    request_context = RequestContext(parent_context=ctx)
+    request_context = RequestContext(parent_context=application_context)
     request_context.container.register(r)
     return request_context
 
 
-# We can seamlessly combine autowired's and FastAPI's dependency injection mechanisms
+# We can seamlessly combine autowired's and FastAPIs dependency injection mechanisms
 def request_auth_service(request_context: RequestContext = Depends(request_context)):
     return request_context.request_auth_service
 
 
 def user_controller():
-    return ctx.user_controller
+    return application_context.user_controller
 
 
 @app.get("/users/{user_id}")

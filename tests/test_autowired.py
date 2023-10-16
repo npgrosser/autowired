@@ -321,7 +321,6 @@ def test_property_not_annotated():
         print(ctx.service1)
 
     class TestContext2(Context):
-
         @cached_property
         def service1(self):
             return self.autowire(Service1)
@@ -346,3 +345,24 @@ def test_component_reuses_base_init():
 
     ctx = TestContext()
     assert isinstance(ctx.component.dep, Dep)
+
+
+def test_hidden_component_is_singleton():
+    class HiddenDep:
+        pass
+
+    class A:
+        def __init__(self, hidden_dep: HiddenDep):
+            self.hidden_dep = hidden_dep
+
+    class B:
+        def __init__(self, hidden_dep: HiddenDep):
+            self.hidden_dep = hidden_dep
+
+    class TestContext(Context):
+        a: A = autowired()
+        b: B = autowired()
+
+    ctx = TestContext()
+
+    assert id(ctx.a.hidden_dep) == id(ctx.b.hidden_dep)
