@@ -112,7 +112,7 @@ class ApplicationContext(Context):
 
 ```
 
-We have simplified the context class to a single line of code. 
+We have simplified the context class to a single line of code.
 As the `NotificationController` was the only component
 that needed to be exposed as a public property, it is the only one we explicitly define.
 _autowired_ now handles the instantiation of all components and their dependencies for us.
@@ -210,24 +210,24 @@ class ApplicationContext(Context):
     notification_controller: NotificationController = autowired(eager=True)
 ```
 
-## Non-Singleton Instances
+## Transient Components
 
-Sometimes you might want a new instance of a component every time it's injected. If this is needed, just use
-a `property` instead of a `cached_property` or `autowired` field.
+There may be situations where you need to create a new instance of a component each time it's injected or accessed from the context. 
+This is also known as a component with transient lifetime. 
+You can accomplish this by setting the `transient` parameter to `True` when defining an `autowired` field.
 
 ```python
 class ApplicationContext(Context):
-
-    @property
-    def notification_controller(self) -> NotificationController:
-        return self.autowire(NotificationController)
+    notification_controller: NotificationController = autowired(transient=True)
 
 
 ctx = ApplicationContext()
 
-# each time the notification controller is accessed, a new instance is created
+# A new instance is created each time the notification controller is accessed
 assert id(ctx.notification_controller) != id(ctx.notification_controller)
 ```
+
+For property methods, simply use the `property` decorator instead of `cached_property`.
 
 ## Scopes and Derived Contexts
 
@@ -316,15 +316,14 @@ if __name__ == "__main__":
 
 ```python
 from dataclasses import dataclass
-from autowired import Context, autowired, provided, cached_property
+from autowired import Context, autowired, provided
 
 
 # Components
 
-
+@dataclass
 class DatabaseService:
-    def __init__(self, conn_str: str):
-        self.conn_str = conn_str
+    conn_str: str
 
     def load_allowed_tokens(self):
         return ["123", "456", ""]
@@ -370,13 +369,12 @@ class ApplicationSettings:
 
 class ApplicationContext(Context):
     user_controller: UserController = autowired()
+    database_service: DatabaseService = autowired(
+        lambda self: dict(conn_str=self.settings.database_connection_string)
+    )
 
     def __init__(self, settings: ApplicationSettings = ApplicationSettings()):
         self.settings = settings
-
-    @cached_property
-    def database_service(self) -> DatabaseService:
-        return DatabaseService(conn_str=self.settings.database_connection_string)
 
 
 from fastapi import FastAPI, Request, Depends, HTTPException
@@ -385,10 +383,10 @@ from fastapi import FastAPI, Request, Depends, HTTPException
 # Request Scoped Service for the FastAPI Application
 
 
+@dataclass
 class RequestAuthService:
-    def __init__(self, db_service: DatabaseService, request: Request):
-        self.db_service = db_service
-        self.request = request
+    db_service: DatabaseService
+    request: Request
 
     def is_authorised(self):
         token = self.request.headers.get("Authorization") or ""
