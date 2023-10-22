@@ -1,9 +1,8 @@
 # autowired
 
-_autowired_ is a lightweight dependency injection library for Python, which utilizes type hints to resolve
-dependencies.     
-It promotes a simple context-based singleton pattern to manage dependencies between components and
-provides some tools to make the implementation of this pattern more convenient.
+_autowired_ is a Python library that simplifies dependency injection by leveraging type hints. It encourages a
+context-based singleton pattern for managing dependencies between components and provides tools to streamline this
+pattern's implementation.
 
 ## Installation
 
@@ -11,210 +10,296 @@ provides some tools to make the implementation of this pattern more convenient.
 pip install autowired
 ```
 
-## Basic Example
+## Dependency Injection Without a Framework
+
+Dependency Injection is a simple but powerful pattern that aids in decoupling components. However, it doesn't
+necessarily require a
+framework for implementation. Python already provides some tools that perfectly fit for implementing dependency
+injection. A simple pattern that often works well is using a central context class to manage the dependencies between
+components, exposing components as properties of the context class. For defining singletons, the `cached_property`
+decorator, part of the Python standard library, can be used. This decorator caches the result of property methods,
+making it ideal for implementing the singleton pattern.
+
+Here's a simple example:
 
 ```python
-from autowired import Context, autowired, cached_property
 from dataclasses import dataclass
+from functools import cached_property
 
 
-# Defining some classes (e.g. services, controllers, repositories, etc.)
-# We will refer to this type of classes as "components" throughout this documentation
+# define some components
+
+class MessageService:
+    def send_message(self, user: str, message: str):
+        print(f"Sending message '{message}' to user '{user}'")
+
 
 class UserService:
-    pass
+    def get_user(self, user_id: int):
+        return f"User{user_id}"
 
 
-class AuthService:
-    pass
-
-
-# Defining a component with dependencies
-class UserAuthService:
-    def __init__(self, user_service: UserService, auth_service: AuthService):
-        self.user_service = user_service
-        self.auth_service = auth_service
-
-    def __repr__(self):
-        return f"UserAuthService(user_service={self.user_service}, auth_service={self.auth_service})"
-
-
-# dataclasses are supported as well
 @dataclass
-class LoginController:
-    user_auth_service: UserAuthService
+class NotificationService:
+    message_service: MessageService
+    user_service: UserService
+    all_caps: bool = False
 
-    def login(self, username: str):
-        print(f"Logging in user {username} via {self.user_auth_service}")
+    def send_notification(self, user_id: int, message: str):
+        user = self.user_service.get_user(user_id)
 
+        if self.all_caps:
+            message = message.upper()
 
-# Creating a context class to manage the components.
-# The context class is a regular class, which inherits from Context
-class ApplicationContext(Context):
-    login_controller: LoginController = autowired()
-
-
-if __name__ == "__main__":
-    ctx = ApplicationContext()
-    ctx.login_controller.login("admin")
-
-```
-
-A context's `autowired` fields and their dependencies are resolved automatically on first access.
-
-Note that all the components (services, controllers, etc.) are neither aware of the context nor the
-existence of the _autowired_ library. They are regular classes, and don't care about how they are instantiated.
-That is a fundamental design principle of _autowired_.
-Wiring things together is the sole responsibility of the context and its dependency container.
-
-In the above example, the complete control of creating the actual component instances is delegated to the library.
-However, you can also instantiate components by hand, using a `cached_property` method on the context class.
-
-The `cached_property` decorator is a first-class citizen in _autowired_.
-The decorated methods will be registered in the context's dependency container, just like fields defined
-with `autowired()`.
-You can make use of this if you need more control over the instantiation of a component.
-
-In the following example, we use a `cached_property` to explicitly instantiate the `UserService` as
-a `CustomUserService`.
-
-```python
-# ... same components as in the previous example
-
-class CustomUserService(UserService):
-    pass
+        self.message_service.send_message(user, message)
 
 
-class ApplicationContext(Context):
-    login_controller: LoginController = autowired()
+@dataclass
+class NotificationController:
+    notification_service: NotificationService
+
+    def notify(self, user_id: int, message: str):
+        print(f"Sending notification to user {user_id}")
+        self.notification_service.send_notification(user_id, message)
+
+
+# define a context class to manage the dependencies between components
+
+class ApplicationContext:
+
+    @cached_property
+    def message_service(self) -> MessageService:
+        return MessageService()
 
     @cached_property
     def user_service(self) -> UserService:
-        return CustomUserService()
+        return UserService()
+
+    @cached_property
+    def notification_service(self) -> NotificationService:
+        return NotificationService(
+            message_service=self.message_service,
+            user_service=self.user_service
+        )
+
+    @cached_property
+    def notification_controller(self) -> NotificationController:
+        return NotificationController(
+            notification_service=self.notification_service
+        )
 
 
-if __name__ == '__main__':
-    ctx = ApplicationContext()
-
-    # The user_auth_service should use the custom user_service now
-    assert isinstance(ctx.login_controller.user_auth_service.user_service, CustomUserService)
-
-    # The instance should be the same throughout the context
-    assert id(ctx.user_service) == id(ctx.login_controller.user_auth_service.user_service)
+ctx = ApplicationContext()
+ctx.notification_controller.notify(1, "Hello, User!")
 ```
 
-## Example with Settings
+In this setup, a single context class manages dependencies, while components are regular classes, unaware of the
+context.
+This approach is sufficient for many applications. However, as the application grows, the context class will become
+increasingly complex. You will have more components, and their interdependencies will become more complex. You will also
+have to deal with different scopes, e.g., request scoped components. This complexity can lead to a lot of boilerplate
+code unrelated to the application logic and create opportunities for bugs. _autowired_ aims to provide tools to make
+this process easier, building on the same principles.
 
-In most cases, you will want to be able to make the behavior of your application configurable via settings.
-As noted above, the context is responsible for wiring things together.
-This makes it the perfect place to evaluate the settings and to pass them to the components as required.
-_autowired_ provides some tools to make this straightforward.
+## Using autowired
+
+Here's how we can rewrite the previous `ApplicationContext` using _autowired_.
 
 ```python
-from autowired import Context, autowired, cached_property
+from autowired import Context, autowired
+
+
+class ApplicationContext(Context):
+    notification_controller: NotificationController = autowired()
+
+```
+
+With this, we've reduced the context class to a single line of code. The notification controller was the only component
+that we needed to expose as a public property of the context. _autowired_ handles the instantiation of all other
+components and their injection into the notification controller.
+
+Note that the component classes remain unaware of the context and the _autowired_ library.
+They don't require any special base class or decorators. This is a fundamental design principle of _autowired_.
+
+## Leveraging cached_property with autowired
+
+Sometimes, you need more control over the instantiation process. For instance, the NotificationService has a
+boolean parameter `all_caps`. We might want a configuration file that enables or disables this feature. Here's how we
+can do this using _autowired_:
+
+```python
+# We define a dataclass to represent our application settings
+@dataclass
+class ApplicationSettings:
+    all_caps_notifications: bool = False
+
+
+class ApplicationContext(Context):
+    notification_controller: NotificationController = autowired()
+
+    # we add a constructor to the context class to allow passing the settings
+    def __init__(self, settings: ApplicationSettings = ApplicationSettings()):
+        self.settings = settings
+
+    @cached_property
+    def _notification_service(self) -> NotificationService:
+        return self.autowire(
+            NotificationService,
+            all_caps=self.settings.all_caps_notifications
+        )
+
+
+settings = ApplicationSettings(all_caps_notifications=True)
+ctx = ApplicationContext(settings=settings)
+ctx.notification_controller.notify(1, "Hello, User!")
+
+assert ctx.notification_controller.notification_service.all_caps == True
+```
+
+As mentioned before, _autowired_ builds on the idea of using _cached\_property_ to implement the singleton pattern. That's
+why `cached_property` is a first-class citizen in _autowired_, and you can use it if you want to have more control over
+the instantiation process. `autowired` fields behave like auto-generated `cached_property`s. When _autowired_ resolves
+dependencies, it respects not only other autowired fields but also `cached_property` and classic `property` methods.
+
+_The `Context` class provides a convenience method `self.autowire()` that you can use to resolve dependencies
+within `cached_property` and `property` methods.
+Explicit dependencies can be passed as kwargs, as shown in the example above, and the rest will be resolved
+automatically.
+
+## Using kwargs factory for autowired fields
+
+The previous example is equivalent to the following:
+
+```python
+class ApplicationContext(Context):
+    notification_controller: NotificationController = autowired()
+    _notification_service: NotificationService = autowired(
+        lambda self: dict(all_caps=self.settings.all_caps_notifications)
+    )
+```
+
+Here we pass a kwargs factory function to autowired as the first argument. The factory function is called with the
+context instance as its only argument when the component is instantiated. This allows us to access the settings
+via `self.settings`. Since we don't need to expose the notification service as a public property of the context, we use
+a leading underscore.
+
+## Recap - The Building Blocks
+
+Now, you already know the most important building blocks of _autowired_.
+
+- `Context` serves as the base class for all classes that manage dependencies between components.
+- `autowired` defines autowired fields.
+- `cached_property` and `property` offer more control over the instantiation process.
+- `self.autowire()` is a helper method for implementing `cached_property` and `property` methods on context classes.
+
+## Eager and Lazy Instantiation
+
+`autowired()` fields behave like `cached_property`s and are instantiated lazily, i.e., the first time they are accessed.
+If this is not the desired behavior, you can use the `eager` parameter to force eager instantiation of autowired fields.
+
+```python
+class ApplicationContext(Context):
+    notification_controller: NotificationController = autowired(eager=True)
+```
+
+## Non-Singleton Instances
+
+Sometimes you might want a new instance of a component every time it's injected. If this is needed, just use
+a `property`.
+
+```python
+class ApplicationContext(Context):
+
+    @property
+    def notification_controller(self) -> NotificationController:
+        return self.autowire(NotificationController)
+
+
+ctx = ApplicationContext()
+
+# each time the notification controller is accessed, a new instance is created
+assert id(ctx.notification_controller) != id(ctx.notification_controller)
+```
+
+## Scopes and Derived Contexts
+
+Often a single context is not sufficient to manage all the dependencies of an application. Instead, many applications
+will have multiple contexts, often sharing some components. A classic example is a request context, derived from an
+application context.
+
+```python
 from dataclasses import dataclass
+from autowired import Context, autowired, provided
 
 
-class UserService:
-    pass
-
+# application scoped components
 
 @dataclass
 class AuthService:
-    secret_key: str
-    user_service: UserService
+    allowed_tokens: list[str]
+
+    def check_token(self, token: str) -> bool:
+        return token in self.allowed_tokens
 
 
+# request scoped components
 @dataclass
-class LoginController:
-    auth_service: AuthService
+class Request:
+    token: str
 
-    def login(self, username: str):
-        print(f"Logging in user {username} via {self.auth_service}")
-
-
-# Create a dataclass to represent your settings
-@dataclass
-class ApplicationSettings:
-    auth_secret_key: str
-
-
-# Create a context to manage the components
-class ApplicationContext(Context):
-    login_controller: LoginController = autowired()
-
-    def __init__(self, settings: ApplicationSettings):
-        self.settings = settings
-
-    # using cached_property and self.autowire()
-    @cached_property
-    def auth_service(self) -> AuthService:
-        # Similar to autowired(), self.autowire() resolves the dependencies of the component automatically.
-        # Besides that, it allows you to pass a subset of the component's dependencies as kwargs.
-        # Here we pass the secret key from our ApplicationSettings to the AuthService and
-        # let the dependency container resolve the remaining dependencies (i.e. the UserService).
-        return self.autowire(AuthService, secret_key=self.settings.auth_secret_key)
-
-
-if __name__ == "__main__":
-    # load the settings as desired (e.g. using pydantic-settings)
-    # For the sake of this example, we just hardcode the settings here
-    settings = ApplicationSettings(auth_secret_key="secret")
-    ctx = ApplicationContext(settings=settings)
-    ctx.login_controller.login("admin")
-```
-
-The following `ApplicationContext` is equivalent to the previous example.
-
-```python
-class ApplicationContext(Context):
-    login_controller: LoginController = autowired()
-
-    # Here we pass a kwargs factory function to autowired.
-    # The factory function will be called with the context instance as its only argument.
-    # This allows us to access the settings via self.settings
-    auth_service: AuthService = autowired(
-        lambda self: dict(secret_key=self.settings.auth_secret_key)
-    )
-
-    def __init__(self, settings: ApplicationSettings):
-        self.settings = settings
-```
-
-Which of the two approaches you prefer is a matter of taste or the complexity of evaluating the settings.
-For simple settings, the _kwargs factory_ function is probably the most convenient way.
-For more complex rules, the _cached\_property_ approach might be more suitable.
-Both approaches can be mixed freely.
-
-## Scopes / Derived Contexts
-
-Often a single context is not enough to manage all the dependencies of an application.
-Instead, many applications will have multiple contexts, that are derived from each other.
-A classic example is a request context, that is derived from the application context.
-
-```python
-
-# ... same application context and components as in the previous example
 
 @dataclass
 class RequestService:
     auth_service: AuthService
+    request: Request
+
+    def is_authorised(self):
+        return self.auth_service.check_token(self.request.token)
 
 
+# application scoped context
+
+@dataclass
+class ApplicationSettings:
+    allowed_tokens: list[str]
+
+
+class ApplicationContext(Context):
+    auth_service: AuthService = autowired(
+        lambda self: dict(allowed_tokens=self.settings.allowed_tokens)
+    )
+
+    def __init__(self, settings: ApplicationSettings):
+        self.settings = settings
+
+# request scoped context
 class RequestContext(Context):
     request_service: RequestService = autowired()
+    # `provided` fields are not resolved automatically, but must be set explicitly in the constructor
+    #  as autowired fields, `property`s and `cached_property`s, they respected when resolving dependencies
+    # If you forget to set them, _autowired_ will raise an exception when you instantiate the context
+    request: Request = provided()
 
-    def __init__(self, parent_context: Context):
-        # setting the parent context makes the parent context's components available
-        self.parent_context = parent_context
+    def __init__(self, parent_context: Context, request: Request):
+        # First, we make the components of the parent context available in this context
+        self.derive_from(parent_context)
+        self.request = request
 
 
 if __name__ == "__main__":
-    root_ctx = ApplicationContext(ApplicationSettings(auth_secret_key="secret"))
-    request_ctx = RequestContext(root_ctx)
+    settings = ApplicationSettings(allowed_tokens=["123", "456"])
+    application_ctx = ApplicationContext(settings)
+
+    demo_request = Request(token="123")
+    request_ctx = RequestContext(application_ctx, demo_request)
 
     # Both contexts should have the same AuthService instance
-    assert id(root_ctx.auth_service) == id(request_ctx.request_service.auth_service)
+    assert id(application_ctx.auth_service) == id(request_ctx.request_service.auth_service)
+
+    if request_ctx.request_service.is_authorised():
+        print("Authorised")
+    else:
+        print("Not authorised")
 
 ```
 
@@ -222,7 +307,7 @@ if __name__ == "__main__":
 
 ```python
 from dataclasses import dataclass
-from autowired import Context, autowired, cached_property
+from autowired import Context, autowired, provided, cached_property
 
 
 # Components
@@ -309,9 +394,11 @@ class RequestAuthService:
 
 class RequestContext(Context):
     request_auth_service: RequestAuthService = autowired()
+    request: Request = provided()
 
-    def __init__(self, parent_context: Context):
-        self.parent_context = parent_context
+    def __init__(self, parent_context: Context, request: Request):
+        self.derive_from(parent_context)
+        self.request = request
 
 
 # Setting up the FastAPI Application
@@ -320,12 +407,8 @@ app = FastAPI()
 application_context = ApplicationContext()
 
 
-def request_context(r: Request):
-    # We manually register the Request object for the request context
-    # so that it can be injected into dependent services (e.g. RequestAuthService)
-    request_context = RequestContext(parent_context=application_context)
-    request_context.container.register(r)
-    return request_context
+def request_context(request: Request):
+    return RequestContext(application_context, request)
 
 
 # We can seamlessly combine autowired's and FastAPIs dependency injection mechanisms
