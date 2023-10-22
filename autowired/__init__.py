@@ -400,7 +400,7 @@ class Context(metaclass=_ContextMeta):
                     f"Failed to determine type of {type(self).__name__}.{prop.name}. "
                 )
 
-            name_normalized = prop.name.removeprefix("_")
+            name_normalized = prop.name.lstrip("_")
 
             container.register(Provider(name_normalized, prop.type, getter))
 
