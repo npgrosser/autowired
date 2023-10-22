@@ -3,7 +3,6 @@ import inspect
 import re
 from abc import ABC
 from dataclasses import dataclass
-from enum import Enum
 from functools import cached_property
 from types import FunctionType
 from typing import TypeVar, Any, Type, Callable, Optional, Union, List, Dict
@@ -24,37 +23,16 @@ except ImportError:  # pragma: no cover
 _T = TypeVar("_T")
 
 
-def _camel_to_snake(name: str) -> str:
-    name = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
-    return re.sub("([a-z0-9])([A-Z])", r"\1_\2", name).lower()
-
-
-def _group_by(key_fn: Callable[[Any], Any], items: List[Any]) -> Dict[Any, List[Any]]:
-    result = {}
-    for item in items:
-        key = key_fn(item)
-        if key not in result:
-            result[key] = []
-        result[key].append(item)
-    return result
-
-
-class FieldType(Enum):
-    NORMAL = 1
-    CACHED = 2
-    AUTO_WIRED = 3
-
-
 @dataclass(frozen=True)
-class PropertyInfo:
+class _PropertyInfo:
     name: str
-    type: type
+    type: Type[_T]
 
 
 @dataclass
 class _PropertyGetter(Callable[[], Any]):
     obj: Any
-    property: PropertyInfo
+    property: _PropertyInfo
 
     def __call__(self) -> Any:
         logger.trace(f"Getting property {self.property.name} for {self.obj}")
@@ -68,40 +46,23 @@ class Dependency:
     required: bool = True
 
 
-def cached(getter: Callable[[], Any]) -> Callable[[], Any]:
-    """
-    Caches the result of the given getter function.
-    :param getter:
-    :return:
-    """
-    value = None
-
-    def wrapper():
-        nonlocal value
-        if value is None:
-            value = getter()
-        return value
-
-    return wrapper
-
-
 @dataclass(frozen=True)
-class Bean:
+class Provider:
     name: str
-    type: type
-    getter: Callable[[], Any]
+    type: Type[_T]
+    getter: Callable[[], _T]
 
     def __str__(self):
-        return f"Bean(name={self.name}, type={self.type.__name__})"
+        return f"Provider(name={self.name}, type={self.type.__name__})"
 
     def __repr__(self):
         return str(self)
 
     @staticmethod
-    def from_instance(instance: Any, name: str = None) -> "Bean":
+    def from_instance(instance: Any, name: str = None) -> "Provider":
         if name is None:
             name = _camel_to_snake(type(instance).__name__)
-        return Bean(name, type(instance), cached(lambda: instance))
+        return Provider(name, type(instance), lambda: instance)
 
 
 class AutowiredException(Exception, ABC):
@@ -128,9 +89,9 @@ class MissingTypeAnnotation(IllegalContextClass):
     pass
 
 
-class BeanConflictException(AutowiredException):
+class ProviderConflictException(AutowiredException):
     """
-    Raised when a bean conflicts with an existing bean.
+    Raised when a provider conflicts with an existing provider.
     """
 
     pass
@@ -185,33 +146,8 @@ class NotProvidedException(AutowiredException):
     pass
 
 
-_illegal_module_names = ["builtins", "typing", "dataclasses", "abc"]
-
-
-def _get_actual_init(t: type) -> Optional[FunctionType]:
-    if "__init__" in t.__dict__:
-        return getattr(t, "__init__")
-    else:
-        for base in t.__bases__:
-            if base == object:
-                continue
-            init = _get_actual_init(base)
-            if init:
-                return init
-        return None
-
-
-def _get_dependencies_for_type(t: type) -> List[Dependency]:
-    init = _get_actual_init(t)
-
-    if init:
-        sig = inspect.signature(init)
-        return [
-            Dependency(name, param.annotation, param.default == inspect.Parameter.empty)
-            for name, param in sig.parameters.items()
-            if name != "self"
-        ]
-    return []
+# types from these modules are not allowed to be auto-wired
+_illegal_autowired_type_modules = ["builtins", "typing", "dataclasses", "abc"]
 
 
 class Container:
@@ -219,27 +155,24 @@ class Container:
     A container for resolving and storing dependencies.
     """
 
-    _beans: List[Bean]
+    _providers: List[Provider]
 
     def __init__(self):
-        self._beans = []
+        self._providers = []
 
-    def derive(self) -> "Container":
-        derived = Container()
-        derived._beans.extend(self._beans)
-        return derived
+    def get_providers(self, dependency: Optional[Dependency] = None) -> List[Provider]:
+        if dependency is None:
+            return list(self._providers)
+        else:
+            return [p for p in self._providers if issubclass(p.type, dependency.type)]
 
-    def get_existing(self, dependency: Dependency) -> Optional[Bean]:
+    def get_provider(self, dependency: Dependency) -> Optional[Provider]:
         """
-        Returns an existing bean that matches the given dependency specification.
+        Returns an existing provider that matches the given dependency specification.
         :param dependency:
         :return:
         """
-        candidates = []
-
-        for r in self._beans:
-            if issubclass(r.type, dependency.type):
-                candidates.append(r)
+        candidates = self.get_providers(dependency)
 
         if len(candidates) == 1:
             return candidates[0]
@@ -256,20 +189,22 @@ class Container:
 
         return None
 
-    def register(self, bean: Union[Bean, Any]):
-        if not isinstance(bean, Bean):
-            bean = Bean.from_instance(bean)
+    def register(self, provider_or_instance: Union[Provider, Any], /):
+        if not isinstance(provider_or_instance, Provider):
+            provider = Provider.from_instance(provider_or_instance)
+        else:
+            provider = provider_or_instance
 
-        for existing in self._beans:
-            if existing.name == bean.name and existing.type == bean.type:
-                raise BeanConflictException(
-                    f"Bean with name {bean.name} and type {bean.type.__name__} "
-                    f"conflicts with existing bean {existing}"
+        for existing in self._providers:
+            if existing.name == provider.name and existing.type == provider.type:
+                raise ProviderConflictException(
+                    f"Provider with name {provider.name} and type {provider.type.__name__} "
+                    f"conflicts with existing provider {existing}"
                 )
-        self._beans.append(bean)
+        self._providers.append(provider)
 
     def unregister(self, name: str):
-        self._beans = [r for r in self._beans if r.name != name]
+        self._providers = [r for r in self._providers if r.name != name]
 
     def resolve(self, dependency: Union[Dependency, Type[_T]]) -> _T:
         if not isinstance(dependency, Dependency):
@@ -280,7 +215,7 @@ class Container:
 
         logger.trace(f"Resolving {dependency} for container {self}")
 
-        existing = self.get_existing(dependency)
+        existing = self.get_provider(dependency)
         if existing:
             logger.trace(f"Found existing {existing}")
             return existing.getter()
@@ -289,7 +224,7 @@ class Container:
 
         result = self.autowire(dependency.type)
 
-        self.register(Bean(dependency.name, dependency.type, lambda: result))
+        self.register(Provider(dependency.name, dependency.type, lambda: result))
 
         logger.trace(f"Successfully autowired {dependency} to {result}")
         return result
@@ -302,7 +237,7 @@ class Container:
         logger.trace(
             f"Auto-wiring {t.__name__} with {len(explicit_kw_args)} explicit args"
         )
-        if t.__module__.split(".")[0] in _illegal_module_names:
+        if t.__module__.split(".")[0] in _illegal_autowired_type_modules:
             raise IllegalAutoWireType(f"Cannot auto-wire object of type {t.__name__}")
 
         dependencies = _get_dependencies_for_type(t)
@@ -313,9 +248,9 @@ class Container:
             if dep.name in resolved_kw_args:
                 continue
 
-            existing = self.get_existing(dep)
+            existing = self.get_provider(dep)
             if existing:
-                logger.trace(f"Found existing {existing} bean for {dep}")
+                logger.trace(f"Found existing {existing} provider for {dep}")
                 logger.trace(
                     f"Getting argument {dep.name} for {t.__name__} from {existing.getter}"
                 )
@@ -355,6 +290,7 @@ class _Autowired(_ContextProperty):
 
 def autowired(
     kw_args_factory: Callable[[], Dict[str, Any]] = None,
+    /,
     *,
     eager: bool = False,
     **kw_args,
@@ -375,22 +311,13 @@ class _Provided(_ContextProperty):
 
 
 def provided() -> Any:
+    """
+    Marks a field as provided.
+    Meaning that the field is set explicitly rather than auto-wired.
+    If not set, an exception is raised on context initialization.
+    :return:
+    """
     return _Provided()
-
-
-def _get_field_type(field_name: str, obj: Any) -> type:
-    field_type = obj.__annotations__.get(field_name, None)
-    if field_type is None:
-        raise MissingTypeAnnotation(
-            f"Cannot determine type of field {type(obj).__name__}.{field_name}"
-        )
-
-    return field_type
-
-
-def _resolve_autowired_field(field_name: str, _autowired: _Autowired, ctx: "Context"):
-    field_type = _get_field_type(field_name, ctx)
-    return ctx.autowire(field_type, **_autowired.get_all_kw_args(ctx))
 
 
 class _ContextMeta(type):
@@ -439,7 +366,9 @@ class _ContextMeta(type):
             if not isinstance(attr_value, _Autowired):
                 return attr_value
 
-            value = _resolve_autowired_field(item, attr_value, self)
+            field_type = _get_field_type(item, self)
+            value = self.autowire(field_type, **attr_value.get_all_kw_args(self))
+
             self.__dict__[item] = value
             return value
 
@@ -448,31 +377,18 @@ class _ContextMeta(type):
         return result
 
 
-def _get_obj_properties(self) -> List[PropertyInfo]:
-    properties = []
-    for name, attr in inspect.getmembers(type(self)):
-        is_cached_property = isinstance(attr, cached_property)
-        is_normal_property = isinstance(attr, property)
-
-        if is_cached_property or is_normal_property:
-            getter = attr.fget if is_normal_property else attr.func
-            prop_type = getter.__annotations__.get("return", None)
-            properties.append(PropertyInfo(name, prop_type))
-        elif isinstance(attr, _Autowired) or isinstance(attr, _Provided):
-            properties.append(PropertyInfo(name, _get_field_type(name, self)))
-    return properties
-
-
 class Context(metaclass=_ContextMeta):
-    parent_context: Optional["Context"] = None
+    def derive_from(self, ctx: Union["Context", Container]) -> None:
+        """
+        Registers all providers from the given context or container in this context.
+        """
+        container = ctx.container if isinstance(ctx, Context) else ctx
+        for provider in container.get_providers():
+            self.container.register(provider)
 
     @cached_property
     def container(self) -> Container:
-        container = (
-            self.parent_context.container.derive()
-            if self.parent_context
-            else Container()
-        )
+        container = Container()
 
         for prop in _get_obj_properties(self):
             if prop.name == "container":
@@ -483,7 +399,10 @@ class Context(metaclass=_ContextMeta):
                 raise MissingTypeAnnotation(
                     f"Failed to determine type of {type(self).__name__}.{prop.name}. "
                 )
-            container.register(Bean(prop.name, prop.type, cached(getter)))
+
+            name_normalized = prop.name.removeprefix("_")
+
+            container.register(Provider(name_normalized, prop.type, getter))
 
         return container
 
@@ -491,9 +410,83 @@ class Context(metaclass=_ContextMeta):
         return self.container.autowire(t, **explicit_kw_args)
 
 
+# region utils
+def _camel_to_snake(name: str) -> str:
+    name = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
+    return re.sub("([a-z0-9])([A-Z])", r"\1_\2", name).lower()
+
+
+def _group_by(key_fn: Callable[[Any], Any], items: List[Any]) -> Dict[Any, List[Any]]:
+    result = {}
+    for item in items:
+        key = key_fn(item)
+        if key not in result:
+            result[key] = []
+        result[key].append(item)
+    return result
+
+
+def _get_actual_init(t: type) -> Optional[FunctionType]:
+    if "__init__" in t.__dict__:
+        return getattr(t, "__init__")
+    else:
+        for base in t.__bases__:
+            if base == object:
+                continue
+            init = _get_actual_init(base)
+            if init:
+                return init
+        return None
+
+
+def _get_dependencies_for_type(t: type) -> List[Dependency]:
+    init = _get_actual_init(t)
+
+    if init:
+        sig = inspect.signature(init)
+        return [
+            Dependency(name, param.annotation, param.default == inspect.Parameter.empty)
+            for name, param in sig.parameters.items()
+            if name != "self"
+        ]
+    return []
+
+
+def _get_field_type(field_name: str, obj: Any) -> Type[_T]:
+    if not hasattr(obj, "__annotations__"):
+        raise MissingTypeAnnotation(
+            f"Cannot determine type of field {type(obj).__name__}.{field_name}"
+        )
+    field_type = obj.__annotations__.get(field_name, None)
+    if field_type is None:
+        raise MissingTypeAnnotation(
+            f"Cannot determine type of field {type(obj).__name__}.{field_name}"
+        )
+
+    return field_type
+
+
+def _get_obj_properties(self) -> List[_PropertyInfo]:
+    properties = []
+    for name, attr in inspect.getmembers(type(self)):
+        is_cached_property = isinstance(attr, cached_property)
+        is_normal_property = isinstance(attr, property)
+
+        if is_cached_property or is_normal_property:
+            getter = attr.fget if is_normal_property else attr.func
+            prop_type = getter.__annotations__.get("return", None)
+            properties.append(_PropertyInfo(name, prop_type))
+        elif isinstance(attr, _Autowired) or isinstance(attr, _Provided):
+            properties.append(_PropertyInfo(name, _get_field_type(name, self)))
+
+    return properties
+
+
+# endregion
+
 __all__ = [
     "AutowiredException",
-    "BeanConflictException",
+    "ProviderConflictException",
     "DependencyError",
     "UnresolvableDependencyException",
     "AmbiguousDependencyException",
@@ -501,13 +494,12 @@ __all__ = [
     "IllegalContextClass",
     "MissingTypeAnnotation",
     "NotProvidedException",
-    "cached",
-    "cached_property",
     "IllegalAutoWireType",
+    "cached_property",
     "Context",
     "Container",
     "Dependency",
-    "Bean",
+    "Provider",
     "autowired",
     "provided",
 ]

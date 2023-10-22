@@ -12,11 +12,11 @@ from autowired import (
     AmbiguousDependencyException,
     IllegalAutoWireType,
     InitializationError,
-    BeanConflictException,
+    Provider,
     NotProvidedException,
     IllegalContextClass,
     MissingTypeAnnotation,
-    Bean,
+    ProviderConflictException,
     provided,
 )
 
@@ -97,10 +97,10 @@ def test_derived_context():
         service4: Service4 = autowired()
 
         def __init__(self, parent_context: Context):
-            self.parent_context = parent_context
+            self.derive_from(parent_context)
 
     derived_context = DerivedContext(ctx)
-    derived_context.container.register(Bean.from_instance(ServiceX("foo")))
+    derived_context.container.register(Provider.from_instance(ServiceX("foo")))
     assert isinstance(derived_context.service4, Service4)
     assert id(derived_context.service4.service1) == id(ctx.service1)
     assert derived_context.service4.x.s == "foo"
@@ -201,7 +201,7 @@ def test_autowire_initialization_error():
 def test_unregister_dependency():
     container = Container()
     s0 = Service0()
-    container.register(Bean.from_instance(s0))
+    container.register(Provider.from_instance(s0))
 
     s0_resolved = container.resolve(Service0)
 
@@ -216,9 +216,9 @@ def test_unregister_dependency():
 
 def test_conflicting_bean():
     container = Container()
-    container.register(Bean.from_instance(Service0()))
-    with pytest.raises(BeanConflictException):
-        container.register(Bean.from_instance(Service0()))
+    container.register(Provider.from_instance(Service0()))
+    with pytest.raises(ProviderConflictException):
+        container.register(Provider.from_instance(Service0()))
 
 
 def test_use_correct_subtype():
@@ -237,7 +237,7 @@ def test_use_correct_subtype():
 
     ctx = TestContext()
     service_b = ServiceB()
-    ctx.container.register(Bean.from_instance(service_b))
+    ctx.container.register(Provider.from_instance(service_b))
 
     assert isinstance(ctx.other.a, ServiceB)
     assert id(ctx.other.a) == id(service_b)
@@ -328,26 +328,34 @@ def test_property_not_annotated():
     with pytest.raises(MissingTypeAnnotation):
         print(TestContext2().container)
 
+    class TestContext3(Context):
+        # partially annotated
+        service1: Service1 = autowired()
+        service2 = autowired()
 
-def test_component_reuses_base_init():
+    with pytest.raises(MissingTypeAnnotation):
+        print(TestContext3().container)
+
+
+def test_provider_reuses_base_init():
     class Dep:
         pass
 
-    class BaseComponent:
+    class BaseProvider:
         def __init__(self, dep: Dep):
             self.dep = dep
 
-    class Component(BaseComponent):
+    class Provider(BaseProvider):
         pass
 
     class TestContext(Context):
-        component: Component = autowired()
+        provider: Provider = autowired()
 
     ctx = TestContext()
-    assert isinstance(ctx.component.dep, Dep)
+    assert isinstance(ctx.provider.dep, Dep)
 
 
-def test_hidden_component_is_singleton():
+def test_hidden_provider_is_singleton():
     class HiddenDep:
         pass
 
@@ -366,3 +374,74 @@ def test_hidden_component_is_singleton():
     ctx = TestContext()
 
     assert id(ctx.a.hidden_dep) == id(ctx.b.hidden_dep)
+
+
+def test_property_with_underscore():
+    class TestContext(Context):
+        _service1: Service1 = autowired()
+
+        @cached_property
+        def _service2(self) -> Service2:
+            return self.autowire(Service2)
+
+    ctx = TestContext()
+
+    providers = ctx.container.get_providers()
+    assert len(providers) == 2
+
+    provider_names = [c.name for c in providers]
+
+    assert "service1" in provider_names
+    assert "service2" in provider_names
+
+
+def test_singletons():
+    class ServiceA:
+        pass
+
+    class ServiceB:
+        pass
+
+    class ServiceC:
+        def __init__(self, a: ServiceA, b: ServiceB):
+            self.a = a
+            self.b = b
+
+    class ServiceD:
+        def __init__(self, a: ServiceA, b: ServiceB):
+            self.a = a
+            self.b = b
+
+    class ServiceE:
+        pass
+
+    class ServiceF:
+        pass
+
+    class TestContext(Context):
+        service_c: ServiceC = autowired()
+        service_d: ServiceD = autowired()
+        service_f: ServiceF = provided()
+
+        def __init__(self, service_f: ServiceF):
+            self.service_f = service_f
+
+        @property
+        def service_b(self) -> ServiceB:
+            return self.autowire(ServiceB)
+
+        @cached_property
+        def service_e(self) -> ServiceE:
+            return self.autowire(ServiceE)
+
+    f = ServiceF()
+    ctx = TestContext(f)
+
+    # property should not be singleton
+    assert id(ctx.service_c.b) != id(ctx.service_d.b)
+    # autowired should be singleton
+    assert id(ctx.service_c) == id(ctx.service_c)
+    # cached_property should be singleton
+    assert id(ctx.service_e) == id(ctx.service_e)
+    # provided should be singleton
+    assert id(ctx.service_f) == id(ctx.service_f)
