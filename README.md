@@ -156,12 +156,13 @@ ctx.notification_controller.notify(1, "Hello, User!")
 assert ctx.notification_controller.notification_service.all_caps == True
 ```
 
-As mentioned before, _autowired_ builds on the idea of using _cached\_property_ to implement the singleton pattern. That's
+As mentioned before, _autowired_ builds on the idea of using _cached\_property_ to implement the singleton pattern.
+That's
 why `cached_property` is a first-class citizen in _autowired_, and you can use it if you want to have more control over
-the instantiation process. `autowired` fields behave like auto-generated `cached_property`s. When _autowired_ resolves
-dependencies, it respects not only other autowired fields but also `cached_property` and classic `property` methods.
+the instantiation process. When _autowired_ resolves
+dependencies, it respects not only other `autowired` fields but also `cached_property` and classic `property` methods.
 
-_The `Context` class provides a convenience method `self.autowire()` that you can use to resolve dependencies
+The `Context` class provides a convenience method `self.autowire()` that you can use to resolve dependencies
 within `cached_property` and `property` methods.
 Explicit dependencies can be passed as kwargs, as shown in the example above, and the rest will be resolved
 automatically.
@@ -178,7 +179,7 @@ class ApplicationContext(Context):
     )
 ```
 
-Here we pass a kwargs factory function to autowired as the first argument. The factory function is called with the
+Here we pass a kwargs factory function to `autowired` as the first argument. The factory function is called with the
 context instance as its only argument when the component is instantiated. This allows us to access the settings
 via `self.settings`. Since we don't need to expose the notification service as a public property of the context, we use
 a leading underscore.
@@ -195,7 +196,7 @@ Now, you already know the most important building blocks of _autowired_.
 ## Eager and Lazy Instantiation
 
 `autowired()` fields behave like `cached_property`s and are instantiated lazily, i.e., the first time they are accessed.
-If this is not the desired behavior, you can use the `eager` parameter to force eager instantiation of autowired fields.
+If this is not the desired behavior, you can use the `eager` parameter to force eager instantiation of the component.
 
 ```python
 class ApplicationContext(Context):
@@ -271,6 +272,7 @@ class ApplicationContext(Context):
 
     def __init__(self, settings: ApplicationSettings):
         self.settings = settings
+
 
 # request scoped context
 class RequestContext(Context):
