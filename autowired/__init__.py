@@ -276,7 +276,7 @@ class _ContextProperty(ABC):
     pass
 
 
-@dataclass
+@dataclass(frozen=True)
 class _Autowired(_ContextProperty):
     eager: bool
     kw_args_factory: Callable[["Context"], Dict[str, Any]]
