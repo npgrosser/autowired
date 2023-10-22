@@ -279,6 +279,7 @@ class _ContextProperty(ABC):
 @dataclass(frozen=True)
 class _Autowired(_ContextProperty):
     eager: bool
+    transient: bool
     kw_args_factory: Callable[["Context"], Dict[str, Any]]
     kw_args: Dict[str, Any]
 
@@ -289,21 +290,28 @@ class _Autowired(_ContextProperty):
 
 
 def autowired(
-    kw_args_factory: Callable[[], Dict[str, Any]] = None,
+    kw_args_factory: Callable[["Context"], Dict[str, Any]] = None,
     /,
     *,
     eager: bool = False,
+    transient: bool = False,
     **kw_args,
 ) -> Any:
     """
     Marks a field as autowired.
     Auto-wired fields are converted to cached properties on the class.
     :param eager: eagerly initialize the field on object creation
+    :param transient: every access to the field returns a new instance
     :param kw_args_factory: return a dict of keyword arguments for initialization of the field
     :param kw_args: keyword arguments for initialization of the field
     :return:
     """
-    return _Autowired(eager=eager, kw_args_factory=kw_args_factory, kw_args=kw_args)
+    return _Autowired(
+        eager=eager,
+        transient=transient,
+        kw_args_factory=kw_args_factory,
+        kw_args=kw_args,
+    )
 
 
 class _Provided(_ContextProperty):
@@ -369,7 +377,9 @@ class _ContextMeta(type):
             field_type = _get_field_type(item, self)
             value = self.autowire(field_type, **attr_value.get_all_kw_args(self))
 
-            self.__dict__[item] = value
+            if not attr_value.transient:
+                self.__dict__[item] = value
+
             return value
 
         result.__getattribute__ = __getattribute__
@@ -475,6 +485,10 @@ def _get_obj_properties(self) -> List[_PropertyInfo]:
         if is_cached_property or is_normal_property:
             getter = attr.fget if is_normal_property else attr.func
             prop_type = getter.__annotations__.get("return", None)
+            if prop_type is None and hasattr(self, "__annotations__"):
+                # try to get from class annotations
+                prop_type = type(self).__annotations__.get(name, None)
+
             properties.append(_PropertyInfo(name, prop_type))
         elif isinstance(attr, _Autowired) or isinstance(attr, _Provided):
             properties.append(_PropertyInfo(name, _get_field_type(name, self)))

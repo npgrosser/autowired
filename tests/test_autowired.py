@@ -445,3 +445,72 @@ def test_singletons():
     assert id(ctx.service_e) == id(ctx.service_e)
     # provided should be singleton
     assert id(ctx.service_f) == id(ctx.service_f)
+
+
+def test_property_fields():
+    class ServiceA:
+        pass
+
+    class ServiceB:
+        pass
+
+    @dataclass
+    class ServiceC:
+        a: ServiceA
+        b: ServiceB
+
+    class ServiceD:
+        def __init__(self, a: ServiceA, b: ServiceB):
+            self.a = a
+            self.b = b
+
+    class TestContext(Context):
+        service_a: ServiceA = cached_property(lambda self: self.autowire(ServiceA))
+        service_b: ServiceB = property(lambda self: self.autowire(ServiceB))
+
+        service_c: ServiceC = autowired()
+        service_d: ServiceD = autowired()
+
+    ctx = TestContext()
+
+    assert isinstance(ctx.service_a, ServiceA)
+    assert isinstance(ctx.service_b, ServiceB)
+    assert isinstance(ctx.service_c, ServiceC)
+    assert isinstance(ctx.service_d, ServiceD)
+
+    # cached_property should be singleton
+    assert id(ctx.service_c.a) == id(ctx.service_a)
+    # property should not be singleton
+    assert id(ctx.service_c.b) != id(ctx.service_b)
+
+
+def test_transient_autowired_field():
+    class ServiceA:
+        pass
+
+    class ServiceB:
+        pass
+
+    class ServiceC:
+        def __init__(self, a: ServiceA, b: ServiceB):
+            self.a = a
+            self.b = b
+
+    class ServiceD:
+        def __init__(self, a: ServiceA, b: ServiceB):
+            self.a = a
+            self.b = b
+
+    class TestContext(Context):
+        service_a: ServiceA = autowired()
+        service_b: ServiceB = autowired(transient=True)
+        service_c: ServiceC = autowired()
+        service_d: ServiceD = autowired()
+
+    ctx = TestContext()
+
+    assert id(ctx.service_c.b) != id(ctx.service_d.b)
+    assert id(ctx.service_c.a) == id(ctx.service_d.a)
+
+    assert id(ctx.service_b) != id(ctx.service_b)
+    assert id(ctx.service_a) == id(ctx.service_a)
