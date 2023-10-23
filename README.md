@@ -1,9 +1,10 @@
 # autowired
 
-
 A minimalistic dependency injection library for Python.
 
-[![PyPI version](https://badge.fury.io/py/autowired.svg)](https://badge.fury.io/py/autowired)
+![PyPI - License](https://img.shields.io/pypi/l/autowired)
+![PyPI - Version](https://img.shields.io/pypi/v/autowired?color=blue)
+![Codecov](https://img.shields.io/codecov/c/github/npgrosser/autowired)
 
 ## Installation
 
@@ -11,17 +12,24 @@ A minimalistic dependency injection library for Python.
 pip install autowired
 ```
 
-## Dependency Injection Without a Framework
+## Core Principles
 
-Dependency Injection is a simple but powerful pattern that aids in decoupling components. However, it doesn't
-necessarily require a
-framework for implementation. Python already provides some tools that are a perfect fit for implementing dependency
-injection. A simple pattern that often works well is using a central context class to manage the dependencies between
-components, exposing components as properties of the context class. For defining singletons, the `cached_property`
-decorator, part of the Python standard library, can be used. This decorator caches the result of property methods,
-making it ideal for implementing the singleton pattern.
+[Dependency Injection](https://en.wikipedia.org/wiki/Dependency_injection) is a simple yet powerful concept designed to
+improve the decoupling of components in code. Although
+it's often associated with certain frameworks, its implementation doesn’t necessarily require one.
 
-Here's a simple example:
+Python's standard library already provides the necessary tools for implementing Dependency Injection (DI).  
+One approach involves defining a central context class, which manages the dependencies between components. These
+components are
+presented as properties of this context class, each tying to the others during instantiation.
+
+Typically, it's preferable for multiple components to share the same instance (often called
+a [singleton](https://en.wikipedia.org/wiki/Singleton_pattern)) of a specific
+dependency. In such cases, Python’s built-in `cached_property` decorator is an ideal solution. It functions by saving
+the result of a property's initial call and then returns this cached value for any subsequent calls.    
+This effectively provides all that's needed for a simple form of Dependency Injection in Python.
+
+Let's look at a simple example:
 
 ```python
 from dataclasses import dataclass
@@ -94,12 +102,15 @@ ctx = ApplicationContext()
 ctx.notification_controller.notify(1, "Hello, User!")
 ```
 
-In this setup, a single context class is responsible for managing the dependencies between components.
-This approach is sufficient for many applications. However, as the application grows, the context class will become
-increasingly bloated. You will have more components, and their interdependencies will become more complex. You will also
+In this setup, a `ApplicationContext` class is responsible for managing the dependencies between components.
+Given that we want all our components to be singletons, we utilize the `cached_property` for each of them.
+
+This approach is sufficient for many simple applications. However, as the application grows, the context class will
+become increasingly bloated. You will have more components, and their interdependencies will become more complex. You
+will also
 have to deal with different scopes, e.g., request scoped components. This complexity can lead to a lot of boilerplate
-code unrelated to the application logic and create opportunities for bugs. _autowired_ aims to provide tools to make
-this process easier, while building on the same simple principles.
+code unrelated to the application logic and create opportunities for errors. _autowired_ aims to streamline this
+process, while building on the same simple principles.
 
 ## Using autowired
 
@@ -118,11 +129,10 @@ We have simplified the context class to a single line of code.
 As the `NotificationController` was the only component
 that needed to be exposed as a public property, it is the only one we explicitly define.
 _autowired_ now handles the instantiation of all components and their dependencies for us.
-Components can be either dataclasses or traditional classes.
-The only requirement is that they are properly annotated with type hints to allow _autowired_ to resolve their
-dependencies automatically.
+Components can be either dataclasses or traditional classes, provided they are appropriately annotated with type hints
+for _autowired_ to automatically resolve their dependencies.
 
-Note that the component classes remain unaware of the context and the _autowired_ library.
+Note that the components remain unaware of the context and the _autowired_ library.
 They don't require any special base class or decorators. This is a fundamental design principle of _autowired_.
 
 ## Leveraging cached_property with autowired
@@ -198,7 +208,7 @@ approach might be more suitable. Both approaches can be mixed freely.
 
 ## Recap - The Building Blocks
 
-Now, you already know the most important building blocks of _autowired_.
+We already covered the most important building blocks of _autowired_.
 
 - `Context` serves as the base class for all classes that manage dependencies between components.
 - `autowired` defines autowired fields.
@@ -217,8 +227,9 @@ class ApplicationContext(Context):
 
 ## Transient Components
 
-There may be situations where you need to create a new instance of a component each time it's injected or accessed from the context. 
-This is also known as a component with transient lifetime. 
+There may be situations where you need to create a new instance of a component each time it's injected or accessed from
+the context.
+This is also known as a component with transient lifetime.
 You can accomplish this by setting the `transient` parameter to `True` when defining an `autowired` field.
 
 ```python
