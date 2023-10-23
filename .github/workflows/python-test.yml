@@ -1,0 +1,19 @@
+name: Python Test
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Test python code
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install pytest and coverage
+      run: pip install pytest pytest-cov
+    - name: Run tests and collect coverage
+      run: pytest --cov ./autowired
+    - name: Upload coverage reports to Codecov
+      run: |
+        curl -Os https://uploader.codecov.io/latest/linux/codecov
+        chmod +x codecov
+        ./codecov -t ${CODECOV_TOKEN}
