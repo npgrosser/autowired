@@ -1,7 +1,9 @@
 # autowired
 
-_autowired_ is a Python library that simplifies dependency injection by leveraging type hints. It encourages a simple
-pattern for managing dependencies between components and provides tools to streamline its implementation.
+
+A minimalistic dependency injection library for Python.
+
+[![PyPI version](https://badge.fury.io/py/autowired.svg)](https://badge.fury.io/py/autowired)
 
 ## Installation
 
@@ -181,6 +183,9 @@ class ApplicationContext(Context):
     _notification_service: NotificationService = autowired(
         lambda self: dict(all_caps=self.settings.all_caps_notifications)
     )
+
+    def __init__(self, settings: ApplicationSettings = ApplicationSettings()):
+        self.settings = settings
 ```
 
 Here we pass a kwargs factory function to `autowired` as the first argument. The factory function is called with the
@@ -227,7 +232,7 @@ ctx = ApplicationContext()
 assert id(ctx.notification_controller) != id(ctx.notification_controller)
 ```
 
-For property methods, simply use the `property` decorator instead of `cached_property`.
+For property methods, simply use the `property` decorator instead of `cached_property` to achieve the same effect.
 
 ## Scopes and Derived Contexts
 
@@ -251,6 +256,7 @@ class AuthService:
 
 
 # request scoped components
+
 @dataclass
 class Request:
     token: str
@@ -282,6 +288,7 @@ class ApplicationContext(Context):
 
 
 # request scoped context
+
 class RequestContext(Context):
     request_service: RequestService = autowired()
     # `provided` fields are not resolved automatically, but must be set explicitly in the constructor.
@@ -295,20 +302,21 @@ class RequestContext(Context):
         self.request = request
 
 
-if __name__ == "__main__":
-    settings = ApplicationSettings(allowed_tokens=["123", "456"])
-    application_ctx = ApplicationContext(settings)
+# usage
 
-    demo_request = Request(token="123")
-    request_ctx = RequestContext(application_ctx, demo_request)
+settings = ApplicationSettings(allowed_tokens=["123", "456"])
+application_ctx = ApplicationContext(settings)
 
-    # Both contexts should have the same AuthService instance
-    assert id(application_ctx.auth_service) == id(request_ctx.request_service.auth_service)
+demo_request = Request(token="123")
+request_ctx = RequestContext(application_ctx, demo_request)
 
-    if request_ctx.request_service.is_authorised():
-        print("Authorised")
-    else:
-        print("Not authorised")
+# Both contexts should have the same AuthService instance
+assert id(application_ctx.auth_service) == id(request_ctx.request_service.auth_service)
+
+if request_ctx.request_service.is_authorised():
+    print("Authorised")
+else:
+    print("Not authorised")
 
 ```
 
