@@ -462,12 +462,28 @@ def _get_dependencies_for_type(t: type) -> List[Dependency]:
     return []
 
 
+def _get_annotations_for_type(t: type) -> Dict[str, Any]:
+    annotations = {}
+
+    if hasattr(t, "__annotations__"):
+        annotations = t.__annotations__
+
+    # base classes (do not overwrite from derived classes)
+    for base in t.__bases__:
+        if base == object:
+            continue
+        base_annotations = _get_annotations_for_type(base)
+        annotations = {
+            **base_annotations,
+            **annotations,
+        }
+
+    return annotations
+
+
 def _get_field_type(field_name: str, obj: Any) -> Type[_T]:
-    if not hasattr(obj, "__annotations__"):
-        raise MissingTypeAnnotation(
-            f"Cannot determine type of field {type(obj).__name__}.{field_name}"
-        )
-    field_type = obj.__annotations__.get(field_name, None)
+    annotations = _get_annotations_for_type(type(obj))
+    field_type = annotations.get(field_name, None)
     if field_type is None:
         raise MissingTypeAnnotation(
             f"Cannot determine type of field {type(obj).__name__}.{field_name}"

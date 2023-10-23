@@ -514,3 +514,22 @@ def test_transient_autowired_field():
 
     assert id(ctx.service_b) != id(ctx.service_b)
     assert id(ctx.service_a) == id(ctx.service_a)
+
+
+def test_inherited_context():
+    class ServiceA:
+        pass
+
+    class BaseContext(Context):
+        service_a: ServiceA = autowired()
+
+    class ServiceB:
+        pass
+
+    class ExtendedContext(BaseContext):
+        service_b: ServiceB = autowired()
+
+    ctx = ExtendedContext()
+
+    assert isinstance(ctx.service_a, ServiceA)
+    assert isinstance(ctx.service_b, ServiceB)
