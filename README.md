@@ -17,9 +17,11 @@ pip install autowired
 With _autowired_, everything is centered around context classes.     
 A context can be viewed as a higher-level layer on top of a dependency injection container.
 It can also be perceived as the in-code configuration of the application's components (e.g., services, controllers,
-repositories, etc.).
+repositories, etc.). The concept of a context in _autowired_ is similar, though not identical, to the concept of a
+module in other dependency injection frameworks.
 
-Let's create a simple example application for sending notifications to users.    
+Let's create a simple first example application.    
+The demo application mimics a notification service that sends messages to users.    
 We begin by defining the components of our application.
 
 ```python
@@ -104,7 +106,7 @@ Typically, it's preferable for multiple components to share the same instance (o
 a [singleton](https://en.wikipedia.org/wiki/Singleton_pattern)) of a specific
 dependency. In such cases, Python’s built-in `cached_property` decorator is an ideal solution. It functions by saving
 the result of a property's initial call and then returns this cached value for any subsequent calls.    
-This effectively provides all that's needed for a simple form of Dependency Injection in Python.
+This effectively provides all that's needed for a simple but elegant form of Dependency Injection in Python.
 
 Let's look at a simple example:
 
