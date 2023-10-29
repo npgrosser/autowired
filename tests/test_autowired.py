@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from unittest.mock import Mock
 
 import pytest
 
@@ -11,7 +12,7 @@ from autowired import (
     UnresolvableDependencyException,
     AmbiguousDependencyException,
     IllegalAutoWireType,
-    InitializationError,
+    InstantiationError,
     Provider,
     NotProvidedException,
     IllegalContextClass,
@@ -100,7 +101,7 @@ def test_derived_context():
             self.derive_from(parent_context)
 
     derived_context = DerivedContext(ctx)
-    derived_context.container.register(Provider.from_instance(ServiceX("foo")))
+    derived_context.container.add(Provider.from_instance(ServiceX("foo")))
     assert isinstance(derived_context.service4, Service4)
     assert id(derived_context.service4.service1) == id(ctx.service1)
     assert derived_context.service4.x.s == "foo"
@@ -194,20 +195,20 @@ def test_autowire_initialization_error():
         def __init__(self):
             raise Exception("Test exception")
 
-    with pytest.raises(InitializationError):
+    with pytest.raises(InstantiationError):
         container.autowire(TestService)
 
 
 def test_unregister_dependency():
     container = Container()
     s0 = Service0()
-    container.register(Provider.from_instance(s0))
+    container.add(Provider.from_instance(s0))
 
     s0_resolved = container.resolve(Service0)
 
     assert id(s0) == id(s0_resolved)
 
-    container.unregister("service0")
+    container.remove("service0")
 
     s0_resolved2 = container.resolve(Service0)
 
@@ -216,9 +217,9 @@ def test_unregister_dependency():
 
 def test_conflicting_bean():
     container = Container()
-    container.register(Provider.from_instance(Service0()))
+    container.add(Provider.from_instance(Service0()))
     with pytest.raises(ProviderConflictException):
-        container.register(Provider.from_instance(Service0()))
+        container.add(Provider.from_instance(Service0()))
 
 
 def test_use_correct_subtype():
@@ -237,7 +238,7 @@ def test_use_correct_subtype():
 
     ctx = TestContext()
     service_b = ServiceB()
-    ctx.container.register(Provider.from_instance(service_b))
+    ctx.container.add(Provider.from_instance(service_b))
 
     assert isinstance(ctx.other.a, ServiceB)
     assert id(ctx.other.a) == id(service_b)
@@ -305,7 +306,7 @@ def test_register_instance():
         print(ctx.service4)
 
     x = ServiceX("foo")
-    ctx.container.register(x)
+    ctx.container.add(x)
 
     assert isinstance(ctx.service4, Service4)
     assert id(ctx.service4.x) == id(x)
@@ -389,7 +390,7 @@ def test_property_with_underscore():
     providers = ctx.container.get_providers()
     assert len(providers) == 2
 
-    provider_names = [c.name for c in providers]
+    provider_names = [c.get_name() for c in providers]
 
     assert "service1" in provider_names
     assert "service2" in provider_names
@@ -533,3 +534,70 @@ def test_inherited_context():
 
     assert isinstance(ctx.service_a, ServiceA)
     assert isinstance(ctx.service_b, ServiceB)
+
+
+def test_provider_from_supplier():
+    instance = Service0()
+
+    def singleton_supplier():
+        return instance
+
+    container = Container()
+    container.add(Provider.from_supplier(singleton_supplier, Service0))
+
+    assert container.resolve(Service0) is instance
+    assert container.resolve(Service0) is container.resolve(Service0)
+
+    # provider should be removed by equality
+    def singleton_supplier2():
+        return instance
+
+    # should not remove anything
+    container.remove(Provider.from_supplier(singleton_supplier2, Service0))
+    assert len(container.get_providers()) == 1
+    # should remove the provider
+    container.remove(Provider.from_supplier(singleton_supplier, Service0))
+    assert len(container.get_providers()) == 0
+
+    container = Container()
+
+    def transient_supplier():
+        return Service0()
+
+    container.add(Provider.from_supplier(transient_supplier, Service0))
+
+    assert container.resolve(Service0) is not container.resolve(Service0)
+
+
+def test_provider_factory_methods():
+    singleton_provider = Provider.from_instance(Service0())
+
+    assert isinstance(singleton_provider.get_instance(Mock(), Mock()), Service0)
+    assert singleton_provider.get_instance(
+        Mock(), Mock()
+    ) is singleton_provider.get_instance(Mock(), Mock())
+
+    provider_from_type = Provider.from_supplier(Service0)
+    assert isinstance(provider_from_type.get_instance(Mock(), Mock()), Service0)
+    assert provider_from_type.get_instance(
+        Mock(), Mock()
+    ) is not provider_from_type.get_instance(Mock(), Mock())
+
+    def supplier_untyped():
+        return Service0()
+
+    with pytest.raises(MissingTypeAnnotation):
+        Provider.from_supplier(supplier_untyped)
+
+    assert isinstance(
+        Provider.from_supplier(supplier_untyped, Service0).get_instance(Mock(), Mock()),
+        Service0,
+    )
+
+    def supplier_typed() -> Service0:
+        return Service0()
+
+    assert isinstance(
+        Provider.from_supplier(supplier_typed).get_instance(Mock(), Mock()),
+        Service0,
+    )

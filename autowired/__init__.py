@@ -1,11 +1,21 @@
 import dataclasses
 import inspect
 import re
-from abc import ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import cached_property
 from types import FunctionType
-from typing import TypeVar, Any, Type, Callable, Optional, Union, List, Dict
+from typing import (
+    TypeVar,
+    Any,
+    Type,
+    Callable,
+    Optional,
+    Union,
+    List,
+    Dict,
+    Generic,
+)
 
 try:  # pragma: no cover
     # noinspection PyPackageRequirements
@@ -41,13 +51,99 @@ class _PropertyGetter(Callable[[], Any]):
 
 @dataclass(frozen=True)
 class Dependency:
+    """
+    A dependency specification.
+    """
+
     name: str
     type: Type[_T]
     required: bool = True
 
 
+class Provider(ABC, Generic[_T]):
+    @abstractmethod
+    def get_instance(
+        self, dependency: Dependency, container: "Container"
+    ) -> _T:  # pragma: no cover
+        """
+        Returns an instance that satisfies the given dependency specification.
+
+        :param dependency: The dependency specification.
+        :param container: The container that is currently resolving the dependency.
+        :return: an instance that satisfies the given dependency specification
+        """
+        ...
+
+    @abstractmethod
+    def get_name(self) -> str:  # pragma: no cover
+        """
+        Returns the name of the provider.
+        Use by the container to resolve ambiguous dependencies.
+        If a container contains multiple dependencies that satisfy the same dependency specification,
+        the name of the dependency is compared to the provider name to try to resolve the ambiguity.
+
+        :return: The name of the provider
+        """
+        ...
+
+    @abstractmethod
+    def satisfies(self, dependency: Dependency) -> bool:  # pragma: no cover
+        """
+        Returns whether this provider satisfies the given dependency specification.
+
+        :param dependency: The dependency specification.
+        :return: Whether this provider satisfies the given dependency specification
+        """
+        ...
+
+    @staticmethod
+    def from_instance(instance: _T, name: str = None) -> "Provider[_T]":
+        """
+        Creates a singleton provider from the given instance.
+
+        :param instance: The instance. Will always be returned by self.get_instance(...)
+        :param name: The name of the provider. If None, the type name of the instance is used (snake case).
+        :return: The newly created provider
+        """
+        if name is None:
+            name = _camel_to_snake(type(instance).__name__)
+        return _SimpleProvider(name, type(instance), lambda: instance)
+
+    # noinspection PyShadowingBuiltins
+    @staticmethod
+    def from_supplier(
+        supplier: Callable[[], _T],
+        type: Type[_T] | None = None,
+        name: str | None = None,
+    ) -> "Provider[_T]":
+        """
+        Creates a provider from the given supplier function.
+        :param supplier: The supplier function. Will be called every time self.get_instance(...) is called.
+        :param type: The type of the component this provider provides.
+                        If None, the return type of the supplier function is used, or if supplier is a class,
+                        the class itself is used.
+        :param name: The name of the provider. If None, the type name of the supplier is used (snake case).
+        :return: The newly created provider
+        """
+        if type is None:
+            # if getter is a class, use the class as type
+            if inspect.isclass(supplier):
+                type = supplier
+            else:
+                type = inspect.signature(supplier).return_annotation
+                if type == inspect.Signature.empty:
+                    raise MissingTypeAnnotation(
+                        f"Failed to determine type of {supplier.__name__}. "
+                    )
+
+        if name is None:
+            name = _camel_to_snake(type.__name__)
+
+        return _SimpleProvider(name, type, supplier)
+
+
 @dataclass(frozen=True)
-class Provider:
+class _SimpleProvider(Provider[_T]):
     name: str
     type: Type[_T]
     getter: Callable[[], _T]
@@ -58,11 +154,14 @@ class Provider:
     def __repr__(self):
         return str(self)
 
-    @staticmethod
-    def from_instance(instance: Any, name: str = None) -> "Provider":
-        if name is None:
-            name = _camel_to_snake(type(instance).__name__)
-        return Provider(name, type(instance), lambda: instance)
+    def get_instance(self, dependency: Dependency, container: "Container") -> _T:
+        return self.getter()
+
+    def get_name(self) -> str:
+        return self.name
+
+    def satisfies(self, dependency: Dependency) -> bool:
+        return issubclass(self.type, dependency.type)
 
 
 class AutowiredException(Exception, ABC):
@@ -130,9 +229,9 @@ class UnresolvableDependencyException(DependencyError):
     pass
 
 
-class InitializationError(DependencyError):
+class InstantiationError(DependencyError):
     """
-    Raised when an object cannot be initialized.
+    Raised when an object cannot be instantiated.
     """
 
     pass
@@ -152,7 +251,7 @@ _illegal_autowired_type_modules = ["builtins", "typing", "dataclasses", "abc"]
 
 class Container:
     """
-    A container for resolving and storing dependencies.
+    A container for resolving and storing dependencies / providers.
     """
 
     _providers: List[Provider]
@@ -161,14 +260,22 @@ class Container:
         self._providers = []
 
     def get_providers(self, dependency: Optional[Dependency] = None) -> List[Provider]:
+        """
+        Returns all providers that match the given dependency specification.
+
+        :param dependency: Optional dependency specification, if None, all providers are returned
+        :return:
+        """
+
         if dependency is None:
             return list(self._providers)
         else:
-            return [p for p in self._providers if issubclass(p.type, dependency.type)]
+            return [p for p in self._providers if p.satisfies(dependency)]
 
     def get_provider(self, dependency: Dependency) -> Optional[Provider]:
         """
         Returns an existing provider that matches the given dependency specification.
+
         :param dependency:
         :return:
         """
@@ -189,24 +296,62 @@ class Container:
 
         return None
 
-    def register(self, provider_or_instance: Union[Provider, Any], /):
+    def add(self, provider_or_instance: Union[Provider, Any], /):
+        """
+        Adds a provider to the container.
+
+        :param provider_or_instance: If not a provider, a singleton provider is created from the instance.
+                                     The name of the provider is derived from the type name of the instance.
+        """
         if not isinstance(provider_or_instance, Provider):
             provider = Provider.from_instance(provider_or_instance)
         else:
             provider = provider_or_instance
 
         for existing in self._providers:
-            if existing.name == provider.name and existing.type == provider.type:
+            if existing.get_name() == provider.get_name():
                 raise ProviderConflictException(
-                    f"Provider with name {provider.name} and type {provider.type.__name__} "
+                    f"Provider with name {provider.get_name()} "
                     f"conflicts with existing provider {existing}"
                 )
         self._providers.append(provider)
 
-    def unregister(self, name: str):
-        self._providers = [r for r in self._providers if r.name != name]
+    def remove(self, provider: str | Provider | Type[_T], /):
+        """
+        Remove a provider from the container.
+
+        :param provider: provider name or provider instance
+        """
+
+        def predicate(p: Provider) -> bool:
+            if isinstance(provider, Provider):
+                return p == provider
+            else:
+                return p.get_name() == provider
+
+        remove_index = None
+        for i, p in enumerate(self._providers):
+            if predicate(p):
+                remove_index = i
+                break
+
+        if remove_index is not None:
+            self._providers.pop(remove_index)
 
     def resolve(self, dependency: Union[Dependency, Type[_T]]) -> _T:
+        """
+        Resolves a dependency from the container.
+        If no existing provider satisfies the dependency specification,
+        the container tries to auto-wire the object as defined by `self.autowire(...)`
+        and stores the result instance as a new singleton provider.
+        If multiple matching providers are found,
+        the name of the dependency is compared to the provider name to try to resolve the ambiguity.
+
+        :param dependency: dependency specification or target type
+        :return: the resolved dependency
+        :raises UnresolvableDependencyException: if the dependency cannot be resolved
+        :raises AmbiguousDependencyException: if multiple matching providers are found and there is no name match
+        """
         if not isinstance(dependency, Dependency):
             logger.trace(f"Resolving type {dependency.__name__} for container {self}")
             dependency = Dependency(
@@ -218,13 +363,15 @@ class Container:
         existing = self.get_provider(dependency)
         if existing:
             logger.trace(f"Found existing {existing}")
-            return existing.getter()
+            return existing.get_instance(dependency, self)
 
         logger.trace(f"Existing not found, auto-wiring {dependency}")
 
         result = self.autowire(dependency.type)
 
-        self.register(Provider(dependency.name, dependency.type, lambda: result))
+        self.add(
+            Provider.from_supplier(lambda: result, dependency.type, dependency.name)
+        )
 
         logger.trace(f"Successfully autowired {dependency} to {result}")
         return result
@@ -234,6 +381,18 @@ class Container:
         t: Type[_T],
         **explicit_kw_args,
     ) -> _T:
+        """
+        Auto-wires an object of the given type. Meaning that all dependencies of the object are resolved
+        as defined by `self.resolve(...)` and the object is initialized with the resolved dependencies.
+        The object itself is always a new instance and not automatically stored in the container.
+
+        :param t:
+        :param explicit_kw_args:
+        :return: the auto-wired object
+        :raises IllegalAutoWireType: if the type is not allowed to be auto-wired (e.g. built-in types)
+        :raises UnresolvableDependencyException: if resolving a dependency fails
+        :raises InitializationError: if initializing the object fails
+        """
         logger.trace(
             f"Auto-wiring {t.__name__} with {len(explicit_kw_args)} explicit args"
         )
@@ -251,10 +410,8 @@ class Container:
             existing = self.get_provider(dep)
             if existing:
                 logger.trace(f"Found existing {existing} provider for {dep}")
-                logger.trace(
-                    f"Getting argument {dep.name} for {t.__name__} from {existing.getter}"
-                )
-                resolved_kw_args[dep.name] = existing.getter()
+
+                resolved_kw_args[dep.name] = existing.get_instance(dep, self)
             else:
                 try:
                     auto = self.resolve(dep)
@@ -269,7 +426,7 @@ class Container:
         try:
             return t(**resolved_kw_args)
         except Exception as e:
-            raise InitializationError(f"Failed to initialize {t.__name__}") from e
+            raise InstantiationError(f"Failed to initialize {t.__name__}") from e
 
 
 class _ContextProperty(ABC):
@@ -298,7 +455,7 @@ def autowired(
     **kw_args,
 ) -> Any:
     """
-    Marks a field as autowired.
+    Marks a context field as autowired.
     Auto-wired fields are converted to cached properties on the class.
     :param eager: eagerly initialize the field on object creation
     :param transient: every access to the field returns a new instance
@@ -394,10 +551,13 @@ class Context(metaclass=_ContextMeta):
         """
         container = ctx.container if isinstance(ctx, Context) else ctx
         for provider in container.get_providers():
-            self.container.register(provider)
+            self.container.add(provider)
 
     @cached_property
     def container(self) -> Container:
+        """
+        Returns the container for this context.
+        """
         container = Container()
 
         for prop in _get_obj_properties(self):
@@ -412,7 +572,7 @@ class Context(metaclass=_ContextMeta):
 
             name_normalized = prop.name.lstrip("_")
 
-            container.register(Provider(name_normalized, prop.type, getter))
+            container.add(Provider.from_supplier(getter, prop.type, name_normalized))
 
         return container
 
@@ -520,7 +680,7 @@ __all__ = [
     "DependencyError",
     "UnresolvableDependencyException",
     "AmbiguousDependencyException",
-    "InitializationError",
+    "InstantiationError",
     "IllegalContextClass",
     "MissingTypeAnnotation",
     "NotProvidedException",

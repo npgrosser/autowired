@@ -12,7 +12,82 @@ A minimalistic dependency injection library for Python.
 pip install autowired
 ```
 
+## Quick Start
+
+With _autowired_, everything is centered around context classes.     
+A context can be viewed as a higher-level layer on top of a dependency injection container.
+It can also be perceived as the in-code configuration of the application's components (e.g., services, controllers,
+repositories, etc.).
+
+Let's create a simple example application for sending notifications to users.    
+We begin by defining the components of our application.
+
+```python
+class MessageService:
+    def send_message(self, user: str, message: str):
+        print(f"Sending message '{message}' to user '{user}'")
+
+
+class UserService:
+    def get_user(self, user_id: int) -> str:
+        return f"User{user_id}"
+
+
+class NotificationService:
+    def __init__(self, message_service: MessageService, user_service: UserService):
+        self.message_service = message_service
+        self.user_service = user_service
+
+    def send_notification(self, user_id: int, message: str):
+        user = self.user_service.get_user(user_id)
+        self.message_service.send_message(user, message)
+
+```
+
+Next, we'll define a context class for this application.    
+The sole responsibility of this class is to set up the application components.
+
+```python
+from autowired import Context, autowired
+
+
+class ApplicationContext(Context):
+    notification_service: NotificationService = autowired()
+```
+
+Finally, we can utilize the context to access and use the application components.
+
+```python
+ctx = ApplicationContext()
+ctx.notification_service.send_notification(1, "Hello, User!")
+```
+
+In our application code, we only interact with the `notification_service`, hence it's the only component we explicitly
+define in the context class.
+
+It's important to note that only the context class is aware of the _autowired_ library.
+All other components are completely oblivious to the dependency injection library.
+This is a fundamental design principle of _autowired_.
+
+Here are some important points to note:
+
+1. Lazy instantiation:  
+   `autowired` fields are instantiated lazily _by default_. This means they are instantiated the first time they are accessed.
+   This can help reduce the startup time of your application and allows the use of a context even if some of its
+   components cannot be instantiated (for example, due to missing configuration or unavailability of external services).
+2. Singletons:  
+   _By default_, `autowired` fields and all implicit dependencies are singletons.
+   This implies that the same instance is returned every time they are accessed or injected.
+
+In this initial example, _autowired_ did all the work for us.
+However, in most real-world applications, you will need more control over the instantiation process.
+The following sections will explain all the necessary concepts and advanced features in more detail.
+
+---
+
 ## Core Principles
+
+### Dependency Injection without Frameworks
 
 [Dependency Injection](https://en.wikipedia.org/wiki/Dependency_injection) is a simple yet powerful concept designed to
 improve the decoupling of components in code. Although
@@ -114,7 +189,7 @@ process, while building on the same simple principles.
 
 ## Using autowired
 
-Here's how we can rewrite the previous `ApplicationContext` using _autowired_.
+Here's how the previous `ApplicationContext` could be rewritten using _autowired_:
 
 ```python
 from autowired import Context, autowired
@@ -131,9 +206,6 @@ that needed to be exposed as a public property, it is the only one we explicitly
 _autowired_ now handles the instantiation of all components and their dependencies for us.
 Components can be either dataclasses or traditional classes, provided they are appropriately annotated with type hints
 for _autowired_ to automatically resolve their dependencies.
-
-Note that the components remain unaware of the context and the _autowired_ library.
-They don't require any special base class or decorators. This is a fundamental design principle of _autowired_.
 
 ## Leveraging cached_property with autowired
 
@@ -256,42 +328,45 @@ from dataclasses import dataclass
 from autowired import Context, autowired, provided
 
 
-# application scoped components
+# an application scoped components
 
 @dataclass
 class AuthService:
-    allowed_tokens: list[str]
+    api_keys: list[str]
 
-    def check_token(self, token: str) -> bool:
-        return token in self.allowed_tokens
+    def check_api_key(self, key: str) -> bool:
+        return key in self.api_keys
 
 
-# request scoped components
-
+# an example request object (e.g., from a web framework)
 @dataclass
 class Request:
-    token: str
+    headers: dict[str, str]
 
+
+# a request scoped component
 
 @dataclass
 class RequestService:
     auth_service: AuthService
     request: Request
 
-    def is_authorised(self):
-        return self.auth_service.check_token(self.request.token)
+    def is_authorised(self) -> bool:
+        api_key = self.request.headers.get("Authorization") or ""
+        api_key = api_key.replace("Bearer ", "")
+        return self.auth_service.check_api_key(api_key)
 
 
-# application scoped context
+# application settings and context
 
 @dataclass
 class ApplicationSettings:
-    allowed_tokens: list[str]
+    api_keys: list[str]
 
 
 class ApplicationContext(Context):
     auth_service: AuthService = autowired(
-        lambda self: dict(allowed_tokens=self.settings.allowed_tokens)
+        lambda self: dict(api_keys=self.settings.api_keys)
     )
 
     def __init__(self, settings: ApplicationSettings):
@@ -313,25 +388,139 @@ class RequestContext(Context):
         self.request = request
 
 
-# usage
+# example usage
 
-settings = ApplicationSettings(allowed_tokens=["123", "456"])
+settings = ApplicationSettings(api_keys=["123", "456"])
 application_ctx = ApplicationContext(settings)
 
-demo_request = Request(token="123")
-request_ctx = RequestContext(application_ctx, demo_request)
 
-# Both contexts should have the same AuthService instance
-assert id(application_ctx.auth_service) == id(request_ctx.request_service.auth_service)
+def create_request_context(request: Request):
+    return RequestContext(application_ctx, request)
 
-if request_ctx.request_service.is_authorised():
-    print("Authorised")
-else:
-    print("Not authorised")
+
+def request_handler(request: Request):
+    ctx = create_request_context(request)
+    if ctx.request_service.is_authorised():
+        return "Authorised"
+    else:
+        raise Exception("Not authorised")
+
+
+# applying the request handler to a dummy request
+
+dummy_request = Request(headers={
+    "Authorization": "Bearer 123"
+})
+response = request_handler(dummy_request)
+print(response)
 
 ```
 
-## Advanced Example - FastAPI Application
+## The Container
+
+Most of the time, using the `Context` class is sufficient for managing dependencies between components.
+However, since it requires knowing upfront which components will be needed, it might not be suitable for all use cases.
+Therefore, if you need more flexibility, you can use the `Container` class instead.
+You can instantiate a container yourself or access a context's container via the `container` property.
+
+```python
+from autowired import Container
+
+
+class MessageService:
+    def send_message(self, user: str, message: str):
+        print(f"Sending message '{message}' to user '{user}'")
+
+
+class UserService:
+    def get_user(self, user_id: int):
+        return f"User{user_id}"
+
+
+class NotificationService:
+    def __init__(self, message_service: MessageService, user_service: UserService):
+        self.message_service = message_service
+        self.user_service = user_service
+
+    def send_notification(self, user_id: int, message: str):
+        user = self.user_service.get_user(user_id)
+        self.message_service.send_message(user, message)
+
+
+container = Container()
+notification_service = container.resolve(NotificationService)
+
+assert isinstance(notification_service, NotificationService)
+assert notification_service is container.resolve(NotificationService)
+assert notification_service.message_service is container.resolve(MessageService)
+```
+
+### Provider
+
+A container can contain a list of providers (instances of the `Provider` class).
+A provider is what actually creates the instances of a component.
+Most of the time, especially when using the `Context` class, you don't need to worry about providers, as they are
+created automatically.
+The `Provider` class defines a simple interface that the `Container` class uses to resolve dependencies.
+
+```python
+class Provider(Generic[T]):
+
+    def satisfies(self, dependency: Dependency) -> bool:
+        # Checks whether the provider can provide an instances that satisfies the given dependency specification.
+        ...
+
+    def get_instance(self, dependency: Dependency, container: Container) -> T:
+        # Returns an instance that satisfies the given dependency specification.
+        ...
+
+    def get_name(self) -> str:
+        # Each provider has a name. The container utilises it to resolve ambiguous dependencies.
+        ...
+
+```    
+
+Most providers are singleton component providers, i.e., they always return the same instance when `get_instance()` is
+called.
+In the above container usage example, when we resolved the `NotificationService` for the first time,
+a singleton provider was
+created automatically and added to the container.
+However, you can also add providers manually.   
+In most cases you use the `from_supplier` or `from_instance` factory methods to create a provider,
+but you can also implement your own `Provider` subclass.
+In the following example, we use the `from_supplier` factory method to create a transient provider for a custom
+`MessageService` class.
+
+```python
+from autowired import Container, Provider
+
+container = Container()
+
+
+class AllCapsMessageService(MessageService):
+    def send_message(self, user: str, message: str):
+        super().send_message(user, message.upper())
+
+
+def create_message_service() -> MessageService:
+    return AllCapsMessageService()
+
+
+# Using `from_supplier` calls the given supplier function each time 
+# Note that the return type annotation on the supplier function is mandatory
+# unless you specify the type argument explicitly
+container.add(Provider.from_supplier(create_message_service))
+
+assert isinstance(container.resolve(MessageService), AllCapsMessageService)
+assert container.resolve(MessageService) is not container.resolve(MessageService)
+
+```
+
+---
+
+## Example Application - FastAPI
+
+The following example shows how to use _autowired_ in a FastAPI application.
 
 ```python
 from dataclasses import dataclass
