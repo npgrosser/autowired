@@ -113,8 +113,8 @@ class Provider(ABC, Generic[_T]):
     @staticmethod
     def from_supplier(
         supplier: Callable[[], _T],
-        type: Type[_T] | None = None,
-        name: str | None = None,
+        type: Optional[Type[_T]] = None,
+        name: Optional[str] = None,
     ) -> "Provider[_T]":
         """
         Creates a provider from the given supplier function.
@@ -316,7 +316,7 @@ class Container:
                 )
         self._providers.append(provider)
 
-    def remove(self, provider: str | Provider | Type[_T], /):
+    def remove(self, provider: Union[str, Provider, Type[_T]], /):
         """
         Remove a provider from the container.
 
