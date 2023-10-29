@@ -2,9 +2,9 @@
 
 A minimalistic dependency injection library for Python.
 
-![PyPI - License](https://img.shields.io/pypi/l/autowired)
-![PyPI - Version](https://img.shields.io/pypi/v/autowired?color=blue)
-![Codecov](https://img.shields.io/codecov/c/github/npgrosser/autowired)
+[![PyPI - License](https://img.shields.io/pypi/l/autowired)](https://github.com/npgrosser/autowired/blob/main/LICENSE)
+[![PyPI - Version](https://img.shields.io/pypi/v/autowired?color=blue)](https://pypi.org/project/autowired/)
+[![Codecov](https://img.shields.io/codecov/c/github/npgrosser/autowired)](https://codecov.io/gh/npgrosser/autowired)
 
 ## Installation
 
