@@ -65,14 +65,16 @@ ctx.notification_service.send_notification(1, "Hello, User!")
 In our application code, we only interact with the `notification_service`, hence it's the only component we explicitly
 define in the context class.
 
-It's important to note that only the context class is aware of the _autowired_ library.
-All other components are completely oblivious to the dependency injection library.
+Note that the `ApplicationContext` is the only class that depends on the _autowired_ library.
+All the components that implement the actual application logic are completely framework-agnostic and
+don't require any special annotations or decorators.
 This is a fundamental design principle of _autowired_.
 
-Here are some important points to note:
+Here are some other important things to point out:
 
 1. Lazy instantiation:  
-   `autowired` fields are instantiated lazily _by default_. This means they are instantiated the first time they are accessed.
+   `autowired` fields are instantiated lazily _by default_. This means they are instantiated the first time they are
+   accessed.
    This can help reduce the startup time of your application and allows the use of a context even if some of its
    components cannot be instantiated (for example, due to missing configuration or unavailability of external services).
 2. Singletons:  
