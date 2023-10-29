@@ -17,9 +17,11 @@ pip install autowired
 With _autowired_, everything is centered around context classes.     
 A context can be viewed as a higher-level layer on top of a dependency injection container.
 It can also be perceived as the in-code configuration of the application's components (e.g., services, controllers,
-repositories, etc.).
+repositories, etc.). The concept of a context in _autowired_ is similar, though not identical, to the concept of a
+module in other dependency injection frameworks.
 
-Let's create a simple example application for sending notifications to users.    
+Let's create a simple first example application.    
+The demo application mimics a notification service that sends messages to users.    
 We begin by defining the components of our application.
 
 ```python
@@ -104,7 +106,7 @@ Typically, it's preferable for multiple components to share the same instance (o
 a [singleton](https://en.wikipedia.org/wiki/Singleton_pattern)) of a specific
 dependency. In such cases, Python’s built-in `cached_property` decorator is an ideal solution. It functions by saving
 the result of a property's initial call and then returns this cached value for any subsequent calls.    
-This effectively provides all that's needed for a simple form of Dependency Injection in Python.
+This effectively provides all that's needed for a simple but elegant form of Dependency Injection in Python.
 
 Let's look at a simple example:
 
@@ -189,7 +191,7 @@ have to deal with different scopes, e.g., request scoped components. This comple
 code unrelated to the application logic and create opportunities for errors. _autowired_ aims to streamline this
 process, while building on the same simple principles.
 
-## Using autowired
+### Using autowired
 
 Here's how the previous `ApplicationContext` could be rewritten using _autowired_:
 
@@ -209,11 +211,11 @@ _autowired_ now handles the instantiation of all components and their dependenci
 Components can be either dataclasses or traditional classes, provided they are appropriately annotated with type hints
 for _autowired_ to automatically resolve their dependencies.
 
-## Leveraging cached_property with autowired
+## Leveraging `cached_property` and `property` methods
 
 Sometimes, you need more control over the instantiation process. For instance, the NotificationService has a
-boolean parameter `all_caps`. We might want a configuration file that enables or disables this feature. Here's how we
-can do this using _autowired_:
+boolean parameter `all_caps`. We might want a configuration file that enables or disables this feature.  
+Here's how we can do this using _autowired_:
 
 ```python
 # We define a dataclass to represent our application settings
