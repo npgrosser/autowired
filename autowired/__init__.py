@@ -434,10 +434,10 @@ class Container:
 
 
 class _ContextProperty(ABC):
-    pass
+    name: str = None
 
 
-@dataclass(frozen=True)
+@dataclass
 class _Autowired(_ContextProperty):
     eager: bool
     transient: bool
@@ -447,7 +447,14 @@ class _Autowired(_ContextProperty):
     def get_all_kw_args(self, ctx: "Context") -> Dict[str, Any]:
         explicit_kw_args = self.kw_args_factory(ctx) if self.kw_args_factory else {}
         explicit_kw_args.update(self.kw_args)
+
+        for key, value in explicit_kw_args.items():
+            if isinstance(value, _ContextValueSelector):
+                explicit_kw_args[key] = value.select(ctx)
         return explicit_kw_args
+
+    def __getattr__(self, item):
+        return _ContextValueSelector(self, [item])
 
 
 def autowired(
@@ -475,8 +482,28 @@ def autowired(
     )
 
 
+class _ContextValueSelector:
+    def __init__(self, context_property: _ContextProperty, path: List[str]):
+        self.context_property = context_property
+        self.path = path
+
+    def __getattr__(self, item: str) -> "_ContextValueSelector":
+        return _ContextValueSelector(self.context_property, self.path + [item])
+
+    def select(self, ctx: "Context") -> Any:
+        value = ctx
+
+        assert self.context_property.name is not None
+
+        full_path = [self.context_property.name] + self.path
+        for key in full_path:
+            value = getattr(value, key)
+        return value
+
+
 class _Provided(_ContextProperty):
-    pass
+    def __getattr__(self, item):
+        return _ContextValueSelector(self, [item])
 
 
 def provided() -> Any:
@@ -507,6 +534,9 @@ class _ContextMeta(type):
         provided_fields = [
             key for key, value in class_dict.items() if isinstance(value, _Provided)
         ]
+        for key, value in class_dict.items():
+            if isinstance(value, _ContextProperty):
+                value.name = key
 
         original_init = class_dict.get("__init__", None)
 
@@ -546,7 +576,6 @@ class _ContextMeta(type):
 
             if not attr_value.transient:
                 lock = self._autowire_locks[item]
-                print("lock key", (id(self), item))
                 with lock:
                     attr_value = super(result, self).__getattribute__(item)
                     if isinstance(attr_value, _Autowired):

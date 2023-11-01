@@ -667,3 +667,49 @@ def test_thread_safe_autowired_field():
 
     thread.join()
     assert from_main is from_thread
+
+
+def test_context_value_selector():
+    @dataclass
+    class ServiceA:
+        foo: str = "bar"
+
+    @dataclass
+    class ServiceB:
+        foo: str = "baz"
+
+    @dataclass
+    class ServiceC:
+        foo: object
+
+    @dataclass
+    class ServiceD:
+        foo: object
+
+    @dataclass
+    class InnerConfig:
+        foo: str
+
+    class Config:
+        def __init__(self, inner: InnerConfig):
+            self.inner = inner
+
+    class MyContext(Context):
+        config: Config = provided()
+        a: ServiceA = autowired(foo=config.inner.foo)
+        # noinspection PyUnresolvedReferences
+        b: ServiceB = autowired(foo=config.wrong)
+        c: ServiceC = autowired(foo=object())
+        d: ServiceD = autowired(foo=c.foo)
+
+        def __init__(self, config: Config):
+            self.config = config
+
+    ctx = MyContext(Config(InnerConfig("bar")))
+
+    assert ctx.a.foo == "bar"
+
+    with pytest.raises(AttributeError):
+        print(ctx.b)
+
+    assert ctx.d.foo is ctx.c.foo
