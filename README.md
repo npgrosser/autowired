@@ -346,6 +346,7 @@ assert main_thread_component is ctx.thread_local_component
 
 import threading
 
+
 # Each thread has its own instance
 def thread_func():
     thread_component = ctx.thread_local_component
@@ -559,9 +560,14 @@ assert container.resolve(MessageService) is not container.resolve(MessageService
 
 ---
 
-## Example Application - FastAPI
+## Example Application — FastAPI
 
-The following example shows how to use _autowired_ in a FastAPI application.
+Although FastAPI already provides a powerful dependency injection feature, you might want to reuse your
+autowired-based context classes.
+The following example shows how to use autowired in a FastAPI
+application.
+It does not aim to replace FastAPI's dependency injection mechanism with autowired, but rather demonstrates
+how to seamlessly combine both.
 
 ```python
 from dataclasses import dataclass
