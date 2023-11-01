@@ -1,3 +1,4 @@
+import threading
 from dataclasses import dataclass
 from unittest.mock import Mock
 
@@ -639,3 +640,30 @@ def test_thread_local_component():
     thread = threading.Thread(target=in_new_thread)
     thread.start()
     thread.join()
+
+
+def test_thread_safe_autowired_field():
+    class SlowInitService:
+        def __init__(self):
+            import time
+
+            time.sleep(0.1)
+
+    class MyContext(Context):
+        service: SlowInitService = autowired()
+
+    ctx = MyContext()
+
+    from_thread = None
+
+    def in_thread():
+        nonlocal from_thread
+        from_thread = ctx.service
+
+    thread = threading.Thread(target=in_thread)
+    thread.start()
+
+    from_main = ctx.service
+
+    thread.join()
+    assert from_main is from_thread

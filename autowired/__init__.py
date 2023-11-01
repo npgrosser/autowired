@@ -540,7 +540,8 @@ class _ContextMeta(type):
             field_type = _get_field_type(item, self)
 
             if not attr_value.transient:
-                lock = mcs._auto_wire_locks[(type(self), item)]
+                lock = mcs._auto_wire_locks[(id(self), item)]
+                print("lock key", (id(self), item))
                 with lock:
                     attr_value = super(result, self).__getattribute__(item)
                     if isinstance(attr_value, _Autowired):
