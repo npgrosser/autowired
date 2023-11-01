@@ -17,8 +17,7 @@ pip install autowired
 With _autowired_, everything is centered around context classes.     
 A context can be viewed as a higher-level layer on top of a dependency injection container.
 It can also be perceived as the in-code configuration of the application's components (e.g., services, controllers,
-repositories, etc.). The concept of a context in _autowired_ is similar, though not identical, to the concept of a
-module in other dependency injection frameworks.
+repositories, etc.).
 
 Let's create a simple first example application.    
 The demo application mimics a notification service that sends messages to users.    
@@ -211,11 +210,22 @@ _autowired_ now handles the instantiation of all components and their dependenci
 Components can be either dataclasses or traditional classes, provided they are appropriately annotated with type hints
 for _autowired_ to automatically resolve their dependencies.
 
-## Leveraging `cached_property` and `property` methods
+## Configuration
 
-Sometimes, you need more control over the instantiation process. For instance, the NotificationService has a
-boolean parameter `all_caps`. We might want a configuration file that enables or disables this feature.  
-Here's how we can do this using _autowired_:
+Autowired provides several ways to configure the instantiation of components within a context.
+Some of them are more convenient, while others offer more flexibility.
+
+### Leveraging `cached_property` and `property` methods
+
+Using `cached_property` and `property` methods is the most straightforward way to configure the instantiation of
+components, as it gives you full control over the process.
+As mentioned before, _autowired_ builds on the idea of using `cached_property` to implement the singleton pattern.
+That's
+why `cached_property` is a first-class citizen in _autowired_.
+When _autowired_ resolves dependencies, it does not only respect other `autowired` fields but also `cached_property`
+as well `property` methods.
+
+Here is an example of how to make use of this to configure the `NotificationService` from the previous example:
 
 ```python
 # We define a dataclass to represent our application settings
@@ -248,21 +258,15 @@ ctx.notification_controller.notify(1, "Hello, User!")
 assert ctx.notification_controller.notification_service.all_caps == True
 ```
 
-As mentioned before, _autowired_ builds on the idea of using `cached_property` to implement the singleton pattern.
-That's
-why `cached_property` is a first-class citizen in _autowired_, and you can use it if you want to have more control over
-the instantiation process. When _autowired_ resolves
-dependencies, it respects not only other `autowired` fields but also `cached_property` and classic `property` methods.
-
-The `Context` class provides a convenience method `self.autowire()` that you can use to resolve dependencies
-within `cached_property` and `property` methods.
-Explicit dependencies can be passed as kwargs, as shown in the example above, and the remaining ones will be resolved
+The `autowire` method behaves very similarly to the `autowired` field, but it is meant to be used to
+directly instantiate components, rather than to define them as fields.
+Explicit dependencies can be passed as kwargs, as shown in the example above, while the remaining ones will be resolved
 automatically as before.
 
-## Configuring Autowired Fields with Context Attributes
+### Configuring Autowired Fields with Context Attributes
 
-To configure your autowired fields with context attributes,
-you can also directly reference the desired attribute in the autowired field definition.
+To configure your autowired fields with attributes of the context-instance,
+you can also directly reference these attributes in the field definition.
 
 Here is how you could rewrite the previous example:
 
@@ -276,14 +280,14 @@ class ApplicationContext(Context):
         self.settings = settings
 ```
 
-Note to make the settings field available in the autowired field definition; we need to define it explicitly.
-We use `provided()` instead of `autowired` because the field is set manually in the constructor.
+To make the settings field available in the autowired field definition, we need to define it explicitly. We
+use `provided` instead of `autowired` because the field is manually set in the constructor.
 
 Which of the two approaches you prefer is a matter of taste or the complexity of evaluating the settings. For simple
 settings, the second approach should be preferred.
 For more complex rules, the `cached_property` approach might be more suitable. Both approaches can be mixed freely.
 
-## Advanced Configuration with Kwargs Factory Function
+### Advanced Configuration with Kwargs Factory Function
 
 For more complex configuration scenarios, you can use a kwargs factory function with autowired fields. This approach
 provides a balance between simplicity and flexibility, allowing you to define custom logic for setting up your autowired
@@ -321,7 +325,9 @@ We already covered the most important building blocks of _autowired_.
 - `cached_property` and `property` offer more control over the instantiation process.
 - `self.autowire()` is a helper method for implementing `cached_property` and `property` methods on context classes.
 
-## Eager and Lazy Instantiation
+## Advanced Features
+
+### Eager and Lazy Instantiation
 
 `autowired()` fields behave like `cached_property`s and are instantiated lazily, i.e., the first time they are accessed.
 If this is not the desired behavior, you can use the `eager` parameter to force eager instantiation of the component.
@@ -331,7 +337,7 @@ class ApplicationContext(Context):
     notification_controller: NotificationController = autowired(eager=True)
 ```
 
-## Transient Components
+### Transient Components
 
 There may be situations where you need to create a new instance of a component each time it's injected or accessed from
 the context.
@@ -351,7 +357,7 @@ assert id(ctx.notification_controller) != id(ctx.notification_controller)
 
 For property methods, simply use the `property` decorator instead of `cached_property` to achieve the same effect.
 
-## Thread Local Components
+### Thread Local Components
 
 Autowired fields can only be singleton or transient components.
 However, if you need thread-local components, you can
@@ -389,7 +395,7 @@ thread.join()
 
 ```
 
-## Scopes and Derived Contexts
+### Scopes and Derived Contexts
 
 Often a single context is not sufficient to manage all the dependencies of an application. Instead, many applications
 will have multiple contexts, often sharing some components. A classic example is a request context, derived from an
@@ -488,7 +494,7 @@ print(response)
 
 ```
 
-## The Container
+### The Container
 
 Most of the time, using the `Context` class is sufficient for managing dependencies between components.
 However, since it requires knowing upfront which components will be needed, it might not be suitable for all use cases.
@@ -527,7 +533,7 @@ assert notification_service is container.resolve(NotificationService)
 assert notification_service.message_service is container.resolve(MessageService)
 ```
 
-### Provider
+#### Provider
 
 A container can contain a list of providers (instances of the `Provider` class).
 A provider is what actually creates the instances of a component.
@@ -592,11 +598,11 @@ assert container.resolve(MessageService) is not container.resolve(MessageService
 
 ## Example Application — FastAPI
 
-Although FastAPI already provides a powerful dependency injection feature, you might want to reuse your
+Although FastAPI already provides a powerful dependency injection mechanism, you might want to reuse your
 autowired-based context classes.
 The following example shows how to use autowired in a FastAPI application.
 It does not aim to replace FastAPI's dependency injection, but rather demonstrates
-how to seamlessly combine both.
+how to seamlessly combine both approaches.
 
 ```python
 from dataclasses import dataclass
