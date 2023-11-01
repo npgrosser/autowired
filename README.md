@@ -321,6 +321,43 @@ assert id(ctx.notification_controller) != id(ctx.notification_controller)
 
 For property methods, simply use the `property` decorator instead of `cached_property` to achieve the same effect.
 
+## Thread Local Components
+
+Autowired fields can only be singleton or transient components.
+However, if you need thread-local components, you can
+use a `thread_local_cached_property`.
+
+```python
+from autowired import thread_local_cached_property
+
+
+class ApplicationContext(Context):
+
+    @thread_local_cached_property
+    def thread_local_component(self) -> NotificationController:
+        return NotificationController()
+
+
+ctx = ApplicationContext()
+
+# Same instance on a single thread
+main_thread_component = ctx.thread_local_component
+assert main_thread_component is ctx.thread_local_component
+
+import threading
+
+# Each thread has its own instance
+def thread_func():
+    thread_component = ctx.thread_local_component
+    assert thread_component is not main_thread_component
+
+
+thread = threading.Thread(target=thread_func)
+thread.start()
+thread.join()
+
+```
+
 ## Scopes and Derived Contexts
 
 Often a single context is not sufficient to manage all the dependencies of an application. Instead, many applications
