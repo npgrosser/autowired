@@ -296,7 +296,6 @@ Here's how you can apply it:
 
 ```python
 class ApplicationContext(Context):
-    settings: ApplicationSettings = provided()
     notification_controller: NotificationController = autowired()
     _notification_service: NotificationService = autowired(
         lambda self: dict(all_caps=self.settings.all_caps_notifications)
