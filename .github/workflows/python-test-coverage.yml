@@ -1,4 +1,4 @@
-name: Python Test
+name: Test python code and upload coverage reports to Codecov
 
 on: [push, pull_request]
 
