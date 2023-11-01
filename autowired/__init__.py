@@ -495,9 +495,10 @@ class _ContextMeta(type):
     Converts all fields with autowired(...) value to cached properties.
     """
 
-    _auto_wire_locks = defaultdict(threading.Lock)  # lock per context and field name
-
     def __new__(mcs, name, bases, class_dict):
+        autowired_fields = [
+            key for key, value in class_dict.items() if isinstance(value, _Autowired)
+        ]
         eager_fields = [
             key
             for key, value in class_dict.items()
@@ -510,6 +511,10 @@ class _ContextMeta(type):
         original_init = class_dict.get("__init__", None)
 
         def new_init(self, *args, **kwargs):
+            self._autowire_locks = defaultdict(threading.Lock)
+            for field in autowired_fields:
+                self._autowire_locks[field] = threading.Lock()
+
             if dataclasses.is_dataclass(self):
                 raise IllegalContextClass(
                     f"Context class {name} must not be a dataclass"
@@ -540,7 +545,7 @@ class _ContextMeta(type):
             field_type = _get_field_type(item, self)
 
             if not attr_value.transient:
-                lock = mcs._auto_wire_locks[(id(self), item)]
+                lock = self._autowire_locks[item]
                 print("lock key", (id(self), item))
                 with lock:
                     attr_value = super(result, self).__getattribute__(item)
