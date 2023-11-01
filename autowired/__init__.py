@@ -436,13 +436,24 @@ class Container:
 class _ContextProperty(ABC):
     name: str = None
 
+    def __setattr__(self, key, value):
+        if key == "name":
+            assert self.name is None, f"Cannot set {self.__class__.__name__} name twice"
+        super().__setattr__(key, value)
 
-@dataclass
+
 class _Autowired(_ContextProperty):
-    eager: bool
-    transient: bool
-    kw_args_factory: Callable[["Context"], Dict[str, Any]]
-    kw_args: Dict[str, Any]
+    def __init__(
+        self,
+        eager: bool,
+        transient: bool,
+        kw_args_factory: Optional[Callable[["Context"], Dict[str, Any]]],
+        kw_args: Dict[str, Any],
+    ):
+        self.eager = eager
+        self.transient = transient
+        self.kw_args_factory = kw_args_factory
+        self.kw_args = kw_args
 
     def get_all_kw_args(self, ctx: "Context") -> Dict[str, Any]:
         explicit_kw_args = self.kw_args_factory(ctx) if self.kw_args_factory else {}
@@ -458,7 +469,7 @@ class _Autowired(_ContextProperty):
 
 
 def autowired(
-    kw_args_factory: Callable[["Context"], Dict[str, Any]] = None,
+    kw_args_factory: Optional[Callable[["Context"], Dict[str, Any]]] = None,
     /,
     *,
     eager: bool = False,
