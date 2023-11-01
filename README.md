@@ -305,8 +305,8 @@ class ApplicationContext(Context):
 
 There may be situations where you need to create a new instance of a component each time it's injected or accessed from
 the context.
-This is also known as a component with transient lifetime.
-You can accomplish this by setting the `transient` parameter to `True` when defining an `autowired` field.
+This is also known as a component with a transient lifetime.
+You can accomplish this by setting the 'transient' parameter to 'True' when defining an 'autowired' field.
 
 ```python
 class ApplicationContext(Context):
@@ -564,9 +564,8 @@ assert container.resolve(MessageService) is not container.resolve(MessageService
 
 Although FastAPI already provides a powerful dependency injection feature, you might want to reuse your
 autowired-based context classes.
-The following example shows how to use autowired in a FastAPI
-application.
-It does not aim to replace FastAPI's dependency injection mechanism with autowired, but rather demonstrates
+The following example shows how to use autowired in a FastAPI application.
+It does not aim to replace FastAPI's dependency injection, but rather demonstrates
 how to seamlessly combine both.
 
 ```python
