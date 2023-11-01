@@ -1,7 +1,9 @@
 import dataclasses
 import inspect
 import re
+import threading
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from dataclasses import dataclass
 from functools import cached_property
 from types import FunctionType
@@ -16,6 +18,8 @@ from typing import (
     Dict,
     Generic,
 )
+
+from autowired._thread_local_cached_property import thread_local_cached_property
 
 try:  # pragma: no cover
     # noinspection PyPackageRequirements
@@ -457,7 +461,7 @@ def autowired(
     """
     Marks a context field as autowired.
     Auto-wired fields are converted to cached properties on the class.
-    :param eager: eagerly initialize the field on object creation
+    :param eager: Eagerly initialize the field on object creation
     :param transient: every access to the field returns a new instance
     :param kw_args_factory: return a dict of keyword arguments for initialization of the field
     :param kw_args: keyword arguments for initialization of the field
@@ -490,6 +494,8 @@ class _ContextMeta(type):
     Metaclass for Context classes.
     Converts all fields with autowired(...) value to cached properties.
     """
+
+    _auto_wire_locks = defaultdict(threading.Lock)  # lock per context and field name
 
     def __new__(mcs, name, bases, class_dict):
         eager_fields = [
@@ -532,10 +538,21 @@ class _ContextMeta(type):
                 return attr_value
 
             field_type = _get_field_type(item, self)
-            value = self.autowire(field_type, **attr_value.get_all_kw_args(self))
 
             if not attr_value.transient:
-                self.__dict__[item] = value
+                lock = mcs._auto_wire_locks[(type(self), item)]
+                with lock:
+                    attr_value = super(result, self).__getattribute__(item)
+                    if isinstance(attr_value, _Autowired):
+                        # is still an autowired field, auto-wire it
+                        value = self.autowire(
+                            field_type, **attr_value.get_all_kw_args(self)
+                        )
+                        self.__dict__[item] = value
+                    else:
+                        value = self.__dict__[item]
+            else:
+                value = self.autowire(field_type, **attr_value.get_all_kw_args(self))
 
             return value
 
@@ -656,9 +673,10 @@ def _get_obj_properties(self) -> List[_PropertyInfo]:
     properties = []
     for name, attr in inspect.getmembers(type(self)):
         is_cached_property = isinstance(attr, cached_property)
+        is_thread_local_cached_property = isinstance(attr, thread_local_cached_property)
         is_normal_property = isinstance(attr, property)
 
-        if is_cached_property or is_normal_property:
+        if is_cached_property or is_normal_property or is_thread_local_cached_property:
             getter = attr.fget if is_normal_property else attr.func
             prop_type = getter.__annotations__.get("return", None)
             if prop_type is None and hasattr(self, "__annotations__"):
@@ -686,6 +704,7 @@ __all__ = [
     "NotProvidedException",
     "IllegalAutoWireType",
     "cached_property",
+    "thread_local_cached_property",
     "Context",
     "Container",
     "Dependency",

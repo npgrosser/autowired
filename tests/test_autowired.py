@@ -19,6 +19,7 @@ from autowired import (
     MissingTypeAnnotation,
     ProviderConflictException,
     provided,
+    thread_local_cached_property,
 )
 
 
@@ -601,3 +602,40 @@ def test_provider_factory_methods():
         Provider.from_supplier(supplier_typed).get_instance(Mock(), Mock()),
         Service0,
     )
+
+
+def test_thread_local_component():
+    import threading
+
+    class ServiceA:
+        def __init__(self):
+            self.thread_id = threading.get_ident()
+
+    class ServiceB:
+        def __init__(self, service_a: ServiceA):
+            self.service_a = service_a
+            self.thread_id = threading.get_ident()
+
+    class TestContext(Context):
+        service_a: ServiceA = autowired()
+
+        @thread_local_cached_property
+        def service_b(self) -> ServiceB:
+            return self.autowire(ServiceB)
+
+    ctx = TestContext()
+    main_thread_service_b = ctx.service_b
+
+    assert isinstance(main_thread_service_b, ServiceB)
+    assert main_thread_service_b is ctx.service_b
+
+    def in_new_thread():
+        new_thread_service_b = ctx.service_b
+        assert new_thread_service_b is not main_thread_service_b
+        assert new_thread_service_b is ctx.service_b
+
+        assert new_thread_service_b.service_a is main_thread_service_b.service_a
+
+    thread = threading.Thread(target=in_new_thread)
+    thread.start()
+    thread.join()
