@@ -259,12 +259,44 @@ within `cached_property` and `property` methods.
 Explicit dependencies can be passed as kwargs, as shown in the example above, and the remaining ones will be resolved
 automatically as before.
 
-## Using kwargs factory for autowired fields
+## Configuring Autowired Fields with Context Attributes
 
-The previous example is equivalent to the following:
+To configure your autowired fields with context attributes,
+you can also directly reference the desired attribute in the autowired field definition.
+
+Here is how you could rewrite the previous example:
 
 ```python
 class ApplicationContext(Context):
+    settings: ApplicationSettings = provided()
+    notification_controller: NotificationController = autowired()
+    _notification_service: NotificationService = autowired(all_caps=settings.all_caps_notifications)
+
+    def __init__(self, settings: ApplicationSettings = ApplicationSettings()):
+        self.settings = settings
+```
+
+Note to make the settings field available in the autowired field definition; we need to define it explicitly.
+We use `provided()` instead of `autowired` because the field is set manually in the constructor.
+
+Which of the two approaches you prefer is a matter of taste or the complexity of evaluating the settings. For simple
+settings, the second approach should be preferred.
+For more complex rules, the `cached_property` approach might be more suitable. Both approaches can be mixed freely.
+
+## Advanced Configuration with Kwargs Factory Function
+
+For more complex configuration scenarios, you can use a kwargs factory function with autowired fields. This approach
+provides a balance between simplicity and flexibility, allowing you to define custom logic for setting up your autowired
+fields.
+
+The factory function is passed the context instance as its only argument during the component's instantiation. This
+allows you to access any attribute of the context and use it in your configuration logic.
+
+Here's how you can apply it:
+
+```python
+class ApplicationContext(Context):
+    settings: ApplicationSettings = provided()
     notification_controller: NotificationController = autowired()
     _notification_service: NotificationService = autowired(
         lambda self: dict(all_caps=self.settings.all_caps_notifications)
@@ -274,15 +306,14 @@ class ApplicationContext(Context):
         self.settings = settings
 ```
 
-Here we pass a kwargs factory function to `autowired` as the first argument. The factory function is called with the
-context instance as its only argument when the component is instantiated. This allows us to access the settings
-via `self.settings`.
+In this example, the `all_caps` attribute of the `_notification_service` field is set by calling a lambda function. This
+function has access to the context instance, allowing it to use the `settings` attribute in its logic.
 
-Which of the two approaches you prefer is a matter of taste or the complexity of evaluating the settings. For simple
-settings, the kwargs factory function is probably the most convenient way. For more complex rules, the `cached_property`
-approach might be more suitable. Both approaches can be mixed freely.
+This approach is particularly useful when the configuration logic is too complex to be expressed directly in the field
+definition, but not complex enough to warrant a dedicated `cached_property` method. As always, you can freely mix and
+match these approaches based on your application's specific needs and complexity.
 
-## Recap - The Building Blocks
+## Recap — The Building Blocks
 
 We already covered the most important building blocks of _autowired_.
 
