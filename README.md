@@ -96,10 +96,9 @@ The following sections will explain all the necessary concepts and advanced feat
 improve the decoupling of components in code. Although
 it's often associated with certain frameworks, its implementation doesn’t necessarily require one.
 
-Python's standard library already provides the necessary tools for implementing Dependency Injection (DI).  
-One approach involves defining a central context class, which manages the dependencies between components. These
-components are
-presented as properties of this context class, each tying to the others during instantiation.
+One simple framework-free approach involves defining a central class, which is responsible for instantiating all the
+necessary components (e.g., services, repositories, controllers, etc.) of an application.
+These components are presented as properties of this class, each tying to the others during instantiation.
 
 Typically, it's preferable for multiple components to share the same instance (often called
 a [singleton](https://en.wikipedia.org/wiki/Singleton_pattern)) of a specific
@@ -111,7 +110,6 @@ Let's look at a simple example:
 
 ```python
 from dataclasses import dataclass
-from functools import cached_property
 
 
 # define some components
@@ -148,9 +146,16 @@ class NotificationController:
     def notify(self, user_id: int, message: str):
         print(f"Sending notification to user {user_id}")
         self.notification_service.send_notification(user_id, message)
+```
 
+And then we create a central class that ties everything together.
+In our case it's life cycle is tied to the application itself, so we call it `ApplicationContext`.
+In practice, there might be multiple such classes, each with a different life cycle or scope (e.g., request, session,
+etc.).
 
-# define a context class to manage the dependencies between components
+```python
+from functools import cached_property
+
 
 class ApplicationContext:
 
@@ -180,15 +185,18 @@ ctx = ApplicationContext()
 ctx.notification_controller.notify(1, "Hello, User!")
 ```
 
-In this setup, a `ApplicationContext` class is responsible for managing the dependencies between components.
-Given that we want all our components to be singletons, we utilize the `cached_property` for each of them.
+In this setup, the `ApplicationContext` is responsible for managing the dependencies between components. Using
+the `cached_property` decorator ensures that each component is instantiated only once, even if it's accessed multiple
+times.
 
-This approach is sufficient for many simple applications. However, as the application grows, the context class will
-become increasingly bloated. You will have more components, and their interdependencies will become more complex. You
-will also
-have to deal with different scopes, e.g., request scoped components. This complexity can lead to a lot of boilerplate
-code unrelated to the application logic and create opportunities for errors. _autowired_ aims to streamline this
-process, while building on the same simple principles.
+This approach is sufficient for many simple applications.
+However, as the application becomes larger and more complex, the context class can quickly become bloated.
+You'll have more components, increasing interdependencies, and you'll need to
+carefully manage the differing life cycles or scopes of each component (e.g. request scoped components, session-scoped
+ones, etc.).
+As the complexity grows, so does the amount of boilerplate code needed, making it harder to maintain and
+increasing the risk for errors.
+_Autowired_ aims to streamline this process, while building on the exact same simple principles.
 
 ### Using autowired
 
@@ -206,7 +214,7 @@ class ApplicationContext(Context):
 We have simplified the context class to a single line of code.
 As the `NotificationController` was the only component
 that needed to be exposed as a public property, it is the only one we explicitly define.
-_autowired_ now handles the instantiation of all components and their dependencies for us.
+_Autowired_ now handles the instantiation of all components and their dependencies for us.
 Components can be either dataclasses or traditional classes, provided they are appropriately annotated with type hints
 for _autowired_ to automatically resolve their dependencies.
 
@@ -217,7 +225,7 @@ Some of them are more convenient, while others offer more flexibility.
 
 ### Leveraging `cached_property` and `property` methods
 
-Using `cached_property` and `property` methods is the most straightforward way to configure the instantiation of
+Using `cached_property` and `property` methods is the most flexible way to configure the instantiation of
 components, as it gives you full control over the process.
 As mentioned before, _autowired_ builds on the idea of using `cached_property` to implement the singleton pattern.
 That's
@@ -280,8 +288,8 @@ class ApplicationContext(Context):
         self.settings = settings
 ```
 
-To make the settings field available in the autowired field definition, we need to define it explicitly. We
-use `provided` instead of `autowired` because the field is manually set in the constructor.
+To make the settings field available in the autowired field definition, we need to define it explicitly.
+Note that we use `provided()` instead of `autowired()` because the field is manually set in the constructor.
 
 Which of the two approaches you prefer is a matter of taste or the complexity of evaluating the settings. For simple
 settings, the second approach should be preferred.
@@ -291,10 +299,12 @@ For more complex rules, the `cached_property` approach might be more suitable. B
 
 For more complex configuration scenarios, you can use a kwargs factory function with autowired fields. This approach
 provides a balance between simplicity and flexibility, allowing you to define custom logic for setting up your autowired
-fields.
+fields directly in the field definition.
 
-The factory function is passed the context instance as its only argument during the component's instantiation. This
-allows you to access any attribute of the context and use it in your configuration logic.
+The factory function receives the context instance as its only argument during the component's instantiation.
+This allows you to access any attribute of the context and use it in your configuration logic.
+It should return a dictionary of kwargs that will be passed to the component's constructor.
+As before, the remaining dependencies will be resolved automatically.
 
 Here's how you can apply it:
 
@@ -309,21 +319,16 @@ class ApplicationContext(Context):
         self.settings = settings
 ```
 
-In this example, the `all_caps` attribute of the `_notification_service` field is set by calling a lambda function. This
-function has access to the context instance, allowing it to use the `settings` attribute in its logic.
-
-This approach is particularly useful when the configuration logic is too complex to be expressed directly in the field
-definition, but not complex enough to warrant a dedicated `cached_property` method. As always, you can freely mix and
-match these approaches based on your application's specific needs and complexity.
+As always, you can freely mix and match the approaches within a single context class.
 
 ## Recap — The Building Blocks
 
 We already covered the most important building blocks of _autowired_.
 
 - `Context` serves as the base class for all classes that manage dependencies between components.
-- `autowired` defines autowired fields.
-- `cached_property` and `property` offer more control over the instantiation process.
-- `self.autowire()` is a helper method for implementing `cached_property` and `property` methods on context classes.
+- `autowired()` defines autowired fields.
+- `@cached_property` and `@property` offer more control over the instantiation process.
+- `self.autowire()` is a helper method for implementing `@cached_property` and `@property` methods on context classes.
 
 ## Advanced Features
 
@@ -355,7 +360,7 @@ ctx = ApplicationContext()
 assert id(ctx.notification_controller) != id(ctx.notification_controller)
 ```
 
-For property methods, simply use the `property` decorator instead of `cached_property` to achieve the same effect.
+For property methods, use the `property` decorator instead of `cached_property` to achieve the same effect.
 
 ### Thread Local Components
 
@@ -406,7 +411,7 @@ from dataclasses import dataclass
 from autowired import Context, autowired, provided
 
 
-# an application scoped components
+# application scoped component
 
 @dataclass
 class AuthService:
@@ -421,8 +426,8 @@ class AuthService:
 class Request:
     headers: dict[str, str]
 
-
-# a request scoped component
+s
+# request scoped component
 
 @dataclass
 class RequestService:
@@ -484,7 +489,7 @@ def request_handler(request: Request):
         raise Exception("Not authorised")
 
 
-# applying the request handler to a dummy request
+# applying the request handler to an example request
 
 dummy_request = Request(headers={
     "Authorization": "Bearer 123"
