@@ -1,6 +1,10 @@
 name: Test python code and upload coverage reports to Codecov
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [ "main" ]
+    paths-ignore:
+      - "**.md"
 
 jobs:
   build:
