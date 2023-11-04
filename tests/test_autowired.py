@@ -1,8 +1,8 @@
+import pytest
+
 import threading
 from dataclasses import dataclass
 from unittest.mock import Mock
-
-import pytest
 
 from autowired import (
     autowired,
@@ -713,3 +713,23 @@ def test_context_value_selector():
         print(ctx.b)
 
     assert ctx.d.foo is ctx.c.foo
+
+
+def test_context_value_selector_direct():
+    @dataclass
+    class TestService:
+        service1: Service1
+        foo: str
+
+    class TestContext(Context):
+        foo: str = provided()
+        service1: Service1 = autowired()
+        test_service: TestService = autowired(service1=service1, foo=foo)
+
+        def __init__(self):
+            self.foo = "bar"
+
+    ctx = TestContext()
+    assert isinstance(ctx.test_service, TestService)
+    assert ctx.test_service.service1 is ctx.service1
+    assert ctx.test_service.foo == "bar"

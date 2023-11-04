@@ -433,13 +433,37 @@ class Container:
             raise InstantiationError(f"Failed to initialize {t.__name__}") from e
 
 
-class _ContextProperty(ABC):
+class _ContextValueSelector:
+    def __init__(
+        self,
+        parent: Optional["_ContextValueSelector"] = None,
+        key: Optional[str] = None,
+    ):
+        self.parent = parent
+        self.key = key
+
+    def __getattr__(self, item: str) -> "_ContextValueSelector":
+        return _ContextValueSelector(self, item)
+
+    def select(self, ctx: "Context") -> Any:
+        assert self.parent is not None
+        assert self.key is not None
+
+        parent_value = self.parent.select(ctx)
+        return getattr(parent_value, self.key)
+
+
+class _ContextProperty(ABC, _ContextValueSelector):
     name: str = None
 
     def __setattr__(self, key, value):
         if key == "name":
             assert self.name is None, f"Cannot set {self.__class__.__name__} name twice"
         super().__setattr__(key, value)
+
+    def select(self, ctx: "Context") -> Any:
+        assert self.name is not None
+        return getattr(ctx, self.name)
 
 
 class _Autowired(_ContextProperty):
@@ -450,6 +474,7 @@ class _Autowired(_ContextProperty):
         kw_args_factory: Optional[Callable[["Context"], Dict[str, Any]]],
         kw_args: Dict[str, Any],
     ):
+        super().__init__()
         self.eager = eager
         self.transient = transient
         self.kw_args_factory = kw_args_factory
@@ -465,7 +490,7 @@ class _Autowired(_ContextProperty):
         return explicit_kw_args
 
     def __getattr__(self, item):
-        return _ContextValueSelector(self, [item])
+        return _ContextValueSelector(self, item)
 
 
 def autowired(
@@ -493,28 +518,9 @@ def autowired(
     )
 
 
-class _ContextValueSelector:
-    def __init__(self, context_property: _ContextProperty, path: List[str]):
-        self.context_property = context_property
-        self.path = path
-
-    def __getattr__(self, item: str) -> "_ContextValueSelector":
-        return _ContextValueSelector(self.context_property, self.path + [item])
-
-    def select(self, ctx: "Context") -> Any:
-        value = ctx
-
-        assert self.context_property.name is not None
-
-        full_path = [self.context_property.name] + self.path
-        for key in full_path:
-            value = getattr(value, key)
-        return value
-
-
 class _Provided(_ContextProperty):
     def __getattr__(self, item):
-        return _ContextValueSelector(self, [item])
+        return _ContextValueSelector(self, item)
 
 
 def provided() -> Any:
