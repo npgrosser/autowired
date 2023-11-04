@@ -273,8 +273,10 @@ automatically as before.
 
 ### Configuring Autowired Fields with Context Attributes
 
-To configure your autowired fields with attributes of the context-instance,
-you can also directly reference these attributes in the field definition.
+Using `cached_property` and `property` allows us to define our own factory functions for components.
+However, for simple use cases, this is unnecessarily verbose.
+To configure your autowired fields with attributes of the
+context-instance, you can also directly reference these attributes in the field definition.
 
 Here is how you could rewrite the previous example:
 
@@ -372,7 +374,7 @@ class ApplicationContext(Context):
     notification_controller: NotificationController = autowired(thread_local=True)
 ```
 
-Each thread will now get its own instance of the component when it is injected or accessed from the context.
+Now, each thread receives its own unique component instance at the point of injection or retrieval from the context
 The same can be achieved for property methods by using the `thread_local_cached_property` decorator.
 
 ### Scopes and Derived Contexts
@@ -400,9 +402,6 @@ class AuthService:
 @dataclass
 class Request:
     headers: dict[str, str]
-
-
-s
 
 
 # request scoped component
