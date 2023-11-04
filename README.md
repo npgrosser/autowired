@@ -150,8 +150,8 @@ class NotificationController:
 
 And then we create a central class that ties everything together.
 In our case it's life cycle is tied to the application itself, so we call it `ApplicationContext`.
-In practice, there might be multiple such classes, each with a different life cycle or scope (e.g., request, session,
-etc.).
+In practice, there might be multiple such classes, each with a different life cycle or scope (e.g., `RequestContext`,
+`SessionContext`, etc.).
 
 ```python
 from functools import cached_property
@@ -231,7 +231,7 @@ As mentioned before, _autowired_ builds on the idea of using `cached_property` t
 That's
 why `cached_property` is a first-class citizen in _autowired_.
 When _autowired_ resolves dependencies, it does not only respect other `autowired` fields but also `cached_property`
-as well `property` methods.
+as well as `property` methods.
 
 Here is an example of how to make use of this to configure the `NotificationService` from the previous example:
 
@@ -364,41 +364,16 @@ For property methods, use the `property` decorator instead of `cached_property` 
 
 ### Thread Local Components
 
-Autowired fields can only be singleton or transient components.
-However, if you need thread-local components, you can
-use a `thread_local_cached_property`.
+Besides singletons and transient components, there is a third type of component lifetime: thread-local.
+For autowired fields, you can set the `thread_local` parameter to `True` to make the component thread-local.
 
 ```python
-from autowired import thread_local_cached_property
-
-
 class ApplicationContext(Context):
-
-    @thread_local_cached_property
-    def thread_local_component(self) -> NotificationController:
-        return NotificationController()
-
-
-ctx = ApplicationContext()
-
-# Same instance on a single thread
-main_thread_component = ctx.thread_local_component
-assert main_thread_component is ctx.thread_local_component
-
-import threading
-
-
-# Each thread has its own instance
-def thread_func():
-    thread_component = ctx.thread_local_component
-    assert thread_component is not main_thread_component
-
-
-thread = threading.Thread(target=thread_func)
-thread.start()
-thread.join()
-
+    notification_controller: NotificationController = autowired(thread_local=True)
 ```
+
+Each thread will now get its own instance of the component when it is injected or accessed from the context.
+The same can be achieved for property methods by using the `thread_local_cached_property` decorator.
 
 ### Scopes and Derived Contexts
 
@@ -426,7 +401,10 @@ class AuthService:
 class Request:
     headers: dict[str, str]
 
+
 s
+
+
 # request scoped component
 
 @dataclass
