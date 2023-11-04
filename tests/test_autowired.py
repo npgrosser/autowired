@@ -605,7 +605,7 @@ def test_provider_factory_methods():
     )
 
 
-def test_thread_local_component():
+def test_thread_local_property():
     import threading
 
     class ServiceA:
@@ -637,9 +637,42 @@ def test_thread_local_component():
 
         assert new_thread_service_b.service_a is main_thread_service_b.service_a
 
+    _test_in_thread(in_new_thread)
+
+
+def _test_in_thread(func):
+    thread_error = None
+
+    def in_new_thread():
+        try:
+            func()
+        except Exception as e:
+            nonlocal thread_error
+            thread_error = e
+
     thread = threading.Thread(target=in_new_thread)
     thread.start()
     thread.join()
+
+    if thread_error is not None:
+        raise thread_error
+
+
+def test_thread_local_autowired():
+    class TestContext(Context):
+        service1: Service1 = autowired(thread_local=True)
+
+    ctx = TestContext()
+    main_thread_service1 = ctx.service1
+    assert isinstance(main_thread_service1, Service1)
+    assert ctx.service1 is main_thread_service1
+
+    def in_new_thread():
+        assert isinstance(ctx.service1, Service1)
+        assert ctx.service1 is not main_thread_service1
+        assert ctx.service1 is ctx.service1
+
+    _test_in_thread(in_new_thread)
 
 
 def test_thread_safe_autowired_field():

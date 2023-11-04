@@ -471,12 +471,14 @@ class _Autowired(_ContextProperty):
         self,
         eager: bool,
         transient: bool,
+        thread_local: bool,
         kw_args_factory: Optional[Callable[["Context"], Dict[str, Any]]],
         kw_args: Dict[str, Any],
     ):
         super().__init__()
         self.eager = eager
         self.transient = transient
+        self.thread_local = thread_local
         self.kw_args_factory = kw_args_factory
         self.kw_args = kw_args
 
@@ -499,20 +501,23 @@ def autowired(
     *,
     eager: bool = False,
     transient: bool = False,
+    thread_local: bool = False,
     **kw_args,
 ) -> Any:
     """
     Marks a context field as autowired.
     Auto-wired fields are converted to cached properties on the class.
+    :param kw_args_factory: Return a dict of keyword arguments for initialization of the field
     :param eager: Eagerly initialize the field on object creation
-    :param transient: every access to the field returns a new instance
-    :param kw_args_factory: return a dict of keyword arguments for initialization of the field
+    :param transient: Every access to the field returns a new instance
+    :param thread_local: Create on instance per-thread
     :param kw_args: keyword arguments for initialization of the field
     :return:
     """
     return _Autowired(
         eager=eager,
         transient=transient,
+        thread_local=thread_local,
         kw_args_factory=kw_args_factory,
         kw_args=kw_args,
     )
@@ -591,7 +596,20 @@ class _ContextMeta(type):
 
             field_type = _get_field_type(item, self)
 
-            if not attr_value.transient:
+            if attr_value.transient:
+                value = self.autowire(field_type, **attr_value.get_all_kw_args(self))
+            elif attr_value.thread_local:
+                thread_local_storage = self.__dict__.setdefault(
+                    f"_{item}_thread_local", threading.local()
+                )
+
+                if not hasattr(thread_local_storage, "value"):
+                    thread_local_storage.value = self.autowire(
+                        field_type, **attr_value.get_all_kw_args(self)
+                    )
+
+                value = thread_local_storage.value
+            else:
                 lock = self._autowire_locks[item]
                 with lock:
                     attr_value = super(result, self).__getattribute__(item)
@@ -603,8 +621,6 @@ class _ContextMeta(type):
                         self.__dict__[item] = value
                     else:
                         value = self.__dict__[item]
-            else:
-                value = self.autowire(field_type, **attr_value.get_all_kw_args(self))
 
             return value
 
