@@ -14,75 +14,54 @@ pip install autowired
 
 ## Quick Start
 
-With _autowired_, everything is centered around context classes.     
-A context can be viewed as a higher-level layer on top of a dependency injection container.
-It can also be perceived as the in-code configuration of the application's components (e.g., services, controllers,
-repositories, etc.).
+The core concept of _autowired_ is the `Context` class.
+You can think of it as a declarative dependency injection container.
 
-Let's create a simple first example application.    
-The demo application mimics a notification service that sends messages to users.    
-We begin by defining the components of our application.
+To demonstrate how it works, let's look at an abstract example.
+First we define some components in plain Python:
 
 ```python
-class MessageService:
-    def send_message(self, user: str, message: str):
-        print(f"Sending message '{message}' to user '{user}'")
+class ComponentA:
+    def hello(self, name: str):
+        print(f"Hello, {name}!")
 
 
-class UserService:
-    def get_user(self, user_id: int) -> str:
-        return f"User{user_id}"
+class ComponentB:
+    def goodbye(self, name: str):
+        print(f"Goodbye, {name}!")
 
 
-class NotificationService:
-    def __init__(self, message_service: MessageService, user_service: UserService):
-        self.message_service = message_service
-        self.user_service = user_service
+class MainComponent:
+    def __init__(self, component_a: ComponentA, component_b: ComponentB):
+        self.component_a = component_a
+        self.component_b = component_b
 
-    def send_notification(self, user_id: int, message: str):
-        user = self.user_service.get_user(user_id)
-        self.message_service.send_message(user, message)
+    def run(self):
+        self.component_a.hello("World")
+        self.component_b.goodbye("World")
 
 ```
 
-Next, we'll define a context class for this application.    
-The sole responsibility of this class is to set up the application components.
+Next, we'll define a context class.
+In our application code, we only need to interact with the `MainComponent`, hence it's the only component we explicitly
+define.
 
 ```python
 from autowired import Context, autowired
 
 
 class ApplicationContext(Context):
-    notification_service: NotificationService = autowired()
+    main_component: MainComponent = autowired()
 ```
 
-Finally, we can utilize the context to access and use the application components.
+Finally, we can utilize it in our application code:
 
 ```python
 ctx = ApplicationContext()
-ctx.notification_service.send_notification(1, "Hello, User!")
+ctx.main_component.run()
 ```
 
-In our application code, we only interact with the `notification_service`, hence it's the only component we explicitly
-define in the context class.
-
-Note that the `ApplicationContext` is the only class that depends on the _autowired_ library.
-All the components that implement the actual application logic are completely framework-agnostic and
-don't require any special annotations or decorators.
-This is a fundamental design principle of _autowired_.
-
-Here are some other important things to point out:
-
-1. Lazy instantiation:  
-   `autowired` fields are instantiated lazily _by default_. This means they are instantiated the first time they are
-   accessed.
-   This can help reduce the startup time of your application and allows the use of a context even if some of its
-   components cannot be instantiated (for example, due to missing configuration or unavailability of external services).
-2. Singletons:  
-   _By default_, `autowired` fields and all implicit dependencies are singletons.
-   This implies that the same instance is returned every time they are accessed or injected.
-
-In this initial example, _autowired_ did all the work for us.
+In this example, _autowired_ was able to resolve all dependencies automatically.
 However, in most real-world applications, you will need more control over the instantiation process.
 The following sections will explain all the necessary concepts and advanced features in more detail.
 
@@ -90,23 +69,82 @@ The following sections will explain all the necessary concepts and advanced feat
 
 ## Core Principles
 
-### Dependency Injection without Frameworks
+### Dependency Injection
 
-[Dependency Injection](https://en.wikipedia.org/wiki/Dependency_injection) is a simple yet powerful concept designed to
-improve the decoupling of components in code. Although
-it's often associated with certain frameworks, its implementation doesn’t necessarily require one.
+Reusability, maintainability, and testability are important aspects of code quality.
+One technique commonly used for achieving this is Dependency Injection (DI).
 
-One simple framework-free approach involves defining a central class, which is responsible for instantiating all the
-necessary components (e.g., services, repositories, controllers, etc.) of an application.
-These components are presented as properties of this class, each tying to the others during instantiation.
+In essence, DI is about decoupling the creation of objects from their usage.
+It encourages a system where dependencies are not built internally,
+but provided (or 'injected') externally.
+This approach offers the flexibility to replace dependencies without altering the classes using them.
+
+While some might associate DI with complex frameworks, it's primarily a simple but effective design pattern.
+
+A simple example:
+
+1. Without DI:
+
+```python
+class TextWriter:
+    def write(self, text: str):
+        print(text)
+
+
+class Poet:
+    def __init__(self):
+        self.writer = TextWriter()
+
+    def write_poem(self):
+        self.writer.write("Roses are red, violets are blue...")
+```
+
+Here, the `Poet` class is tightly coupled to the `TextWriter` class.
+If we wanted to use a different writer, we would have to change the `Poet` class.
+
+2. With DI:
+
+```python
+class TextWriter:
+    def write(self, text: str):
+        print(text)
+
+
+class Poet:
+    def __init__(self, writer: TextWriter):
+        self.writer = writer
+
+    def write_poem(self):
+        self.writer.write("Roses are red, violets are blue...")
+```
+
+Here, the `Poet` class is decoupled from the `TextWriter` class. It can now interact with any class that implements
+the `TextWriter` interface without necessitating changes to the `Poet` class itself. This elevates the flexibility and
+reusability of the `Poet` class. Moreover, it simplifies testing, as the `Poet` can now be easily tested in isolation
+from the `TextWriter`.
+
+Since Dependency Injection relieves the class from creating its own dependencies, these now need to be provided
+from the outside.
+This naturally leads to the question: Who takes up this responsibility?
+
+In a simple application, this could be the main function. It could be responsible for reading the configuration and
+instantiating all the necessary components with the correct dependencies.
+This is sufficient for small applications, but it quickly becomes unwieldy as the application grows.
+This is especially true if you have multiple entry points and need to reuse the same instantiation logic in different
+places such as in a CLI, a web app, or a test suite.
+
+To resolve this, one clean approach is to create a central class that takes over this responsibility and allows access
+to all the necessary components. These components could be presented as properties of this class, each tied to the
+others during instantiation.
 
 Typically, it's preferable for multiple components to share the same instance (often called
 a [singleton](https://en.wikipedia.org/wiki/Singleton_pattern)) of a specific
 dependency. In such cases, Python’s built-in `cached_property` decorator is an ideal solution. It functions by saving
 the result of a property's initial call and then returns this cached value for any subsequent calls.    
-This effectively provides all that's needed for a simple but elegant form of Dependency Injection in Python.
+This effectively provides all that's needed for a simple but elegant and reusable form of Dependency Injection in
+Python.
 
-Let's look at a simple example:
+Let's look at a more concrete example:
 
 ```python
 from dataclasses import dataclass
@@ -148,10 +186,7 @@ class NotificationController:
         self.notification_service.send_notification(user_id, message)
 ```
 
-And then we create a central class that ties everything together.
-In our case it's life cycle is tied to the application itself, so we call it `ApplicationContext`.
-In practice, there might be multiple such classes, each with a different life cycle or scope (e.g., `RequestContext`,
-`SessionContext`, etc.).
+And now we create a central class that ties everything together.
 
 ```python
 from functools import cached_property
@@ -189,14 +224,14 @@ In this setup, the `ApplicationContext` is responsible for managing the dependen
 the `cached_property` decorator ensures that each component is instantiated only once, even if it's accessed multiple
 times.
 
-This approach is sufficient for many simple applications.
+This approach is already sufficient for many simple applications.
 However, as the application becomes larger and more complex, the context class can quickly become bloated.
 You'll have more components, increasing interdependencies, and you'll need to
 carefully manage the differing life cycles or scopes of each component (e.g. request scoped components, session-scoped
 ones, etc.).
 As the complexity grows, so does the amount of boilerplate code needed, making it harder to maintain and
 increasing the risk for errors.
-_Autowired_ aims to streamline this process, while building on the exact same simple principles.
+_Autowired_ aims to streamline this process, while building on the same simple principles.
 
 ### Using autowired
 
@@ -334,6 +369,124 @@ We already covered the most important building blocks of _autowired_.
 
 ## Advanced Features
 
+### Component Lifetime
+
+By default, components function as singletons, meaning the same instance is returned each time they're accessed or
+injected from a context. However, situations may arise where a different lifetime for a component is required.
+_Autowired_ offers three specific lifetimes within a context: singleton, transient, and thread-local. These can be
+applied to both autowired fields and properties, as shown in the table below:
+
+| Lifetime  | Description                                             | Autowired Syntax               | Decorator                       |
+|-----------|---------------------------------------------------------|--------------------------------|---------------------------------|
+| Singleton | Single shared instance across the context               | `autowired()`                  | `@cached_property`              |
+| Transient | A new instance is created whenever accessed or injected | `autowired(transient=True)`    | `@property`                     |
+| Thread    | Unique instance per thread                              | `autowired(thread_local=True)` | `@thread_local_cached_property` |
+
+While component lifetimes dictate the policy for instantiation of components within a particular context, determining
+whether new instances are created or existing ones are reused, another essential dimension in component lifetime
+management exists: the lifetime of the context itself.
+See the next section for more details on this.
+
+### Scopes and Derived Contexts
+
+In many applications, components can be bound to a specific scope.
+A common example is a web application,
+where some components are request-scoped, while others are session-scoped or application-scoped.
+Often, these scopes follow a hierarchy; for example, a request scope is part of a session scope, which is part of the
+application scope.
+
+While it's certainly possible to manage all these components within a single context, it can sometimes be beneficial to
+break them up into multiple contexts.
+Each context can then handle its own component instances, while drawing from the parent context if necessary.
+
+The next example demonstrates how this hierarchical structure can be implemented using _autowired_.
+
+```python
+from autowired import Context, autowired, provided
+import json
+from dataclasses import dataclass
+
+
+# application scope
+
+class DatabaseService:
+
+    def __init__(self, connection_string: str):
+        self.connection_string = connection_string
+
+    def get_api_keys(self):
+        print(f"Fetching API keys from the database...")
+        return ["123", "456", ""]
+
+    def get_user_data(self, user_id: str):
+        print(f"Fetching data for user {user_id} from the database...")
+        return {"name": "John Doe", "email": "john.doe@example.com"}
+
+
+@dataclass
+class ApplicationSettings:
+    db_connection_string: str = "db://localhost"
+
+
+class ApplicationContext(Context):
+    settings: ApplicationSettings = provided()
+    database_service: DatabaseService = autowired(connection_string=settings.db_connection_string)
+
+    def __init__(self, settings: ApplicationSettings):
+        self.settings = settings
+
+
+# request scope
+
+@dataclass
+class HttpRequest:
+    headers: dict[str, str]
+    parameters: dict[str, str]
+
+
+class HttpRequestHandler:
+
+    def __init__(self, database_service: DatabaseService):
+        self.database_service = database_service
+
+    def handle_request(self, request: HttpRequest) -> str:
+        api_key = request.headers.get("Authorization") or ""
+        if api_key in self.database_service.get_api_keys():
+            print("User is authorised")
+            user_id = request.parameters.get("user_id")
+            user_data = self.database_service.get_user_data(user_id)
+            return json.dumps(user_data)
+        else:
+            raise Exception("Not authorised")
+
+
+class RequestContext(Context):
+    http_request: HttpRequest = provided()
+    http_request_handler: HttpRequestHandler = autowired(http_request=http_request)
+
+    def __init__(self, parent_context: Context, http_request: HttpRequest):
+        self.derive_from(parent_context)
+        self.http_request = http_request
+
+
+# example usage
+
+settings = ApplicationSettings(db_connection_string="db://localhost")
+app_context = ApplicationContext(settings)
+
+# Create a dummy HTTP request
+http_request = HttpRequest(headers={"Authorization": "123"}, parameters={"user_id": "1"})
+
+# Create a request context for the dummy request
+request_context = RequestContext(app_context, http_request)
+
+# Use the HttpRequestHandler to handle the request
+response = request_context.http_request_handler.handle_request()
+
+print(response)
+
+```
+
 ### Eager and Lazy Instantiation
 
 `autowired()` fields behave like `cached_property`s and are instantiated lazily, i.e., the first time they are accessed.
@@ -342,138 +495,6 @@ If this is not the desired behavior, you can use the `eager` parameter to force 
 ```python
 class ApplicationContext(Context):
     notification_controller: NotificationController = autowired(eager=True)
-```
-
-### Transient Components
-
-There may be situations where you need to create a new instance of a component each time it's injected or accessed from
-the context.
-This is also known as a component with a transient lifetime.
-You can accomplish this by setting the 'transient' parameter to 'True' when defining an 'autowired' field.
-
-```python
-class ApplicationContext(Context):
-    notification_controller: NotificationController = autowired(transient=True)
-
-
-ctx = ApplicationContext()
-
-# A new instance is created each time the notification controller is accessed
-assert id(ctx.notification_controller) != id(ctx.notification_controller)
-```
-
-For property methods, use the `property` decorator instead of `cached_property` to achieve the same effect.
-
-### Thread Local Components
-
-Besides singletons and transient components, there is a third type of component lifetime: thread-local.
-For autowired fields, you can set the `thread_local` parameter to `True` to make the component thread-local.
-
-```python
-class ApplicationContext(Context):
-    notification_controller: NotificationController = autowired(thread_local=True)
-```
-
-Now, each thread receives its own unique component instance at the point of injection or retrieval from the context
-The same can be achieved for property methods by using the `thread_local_cached_property` decorator.
-
-### Scopes and Derived Contexts
-
-Often a single context is not sufficient to manage all the dependencies of an application. Instead, many applications
-will have multiple contexts, often sharing some components. A classic example is a request context, derived from an
-application context.
-
-```python
-from dataclasses import dataclass
-from autowired import Context, autowired, provided
-
-
-# application scoped component
-
-@dataclass
-class AuthService:
-    api_keys: list[str]
-
-    def check_api_key(self, key: str) -> bool:
-        return key in self.api_keys
-
-
-# an example request object (e.g., from a web framework)
-@dataclass
-class Request:
-    headers: dict[str, str]
-
-
-# request scoped component
-
-@dataclass
-class RequestService:
-    auth_service: AuthService
-    request: Request
-
-    def is_authorised(self) -> bool:
-        api_key = self.request.headers.get("Authorization") or ""
-        api_key = api_key.replace("Bearer ", "")
-        return self.auth_service.check_api_key(api_key)
-
-
-# application settings and context
-
-@dataclass
-class ApplicationSettings:
-    api_keys: list[str]
-
-
-class ApplicationContext(Context):
-    auth_service: AuthService = autowired(
-        lambda self: dict(api_keys=self.settings.api_keys)
-    )
-
-    def __init__(self, settings: ApplicationSettings):
-        self.settings = settings
-
-
-# request scoped context
-
-class RequestContext(Context):
-    request_service: RequestService = autowired()
-    # `provided` fields are not resolved automatically, but must be set explicitly in the constructor.
-    # As `autowired` fields, `property`s and `cached_property`s, they are respected during dependency resolution.
-    # If you forget to set them, _autowired_ will raise an exception on context instantiation.
-    request: Request = provided()
-
-    def __init__(self, parent_context: Context, request: Request):
-        # We use `self.derive_from` to make the components of the parent context available in the request context.
-        self.derive_from(parent_context)
-        self.request = request
-
-
-# example usage
-
-settings = ApplicationSettings(api_keys=["123", "456"])
-application_ctx = ApplicationContext(settings)
-
-
-def create_request_context(request: Request):
-    return RequestContext(application_ctx, request)
-
-
-def request_handler(request: Request):
-    ctx = create_request_context(request)
-    if ctx.request_service.is_authorised():
-        return "Authorised"
-    else:
-        raise Exception("Not authorised")
-
-
-# applying the request handler to an example request
-
-dummy_request = Request(headers={
-    "Authorization": "Bearer 123"
-})
-response = request_handler(dummy_request)
-print(response)
-
 ```
 
 ### The Container
@@ -514,6 +535,8 @@ assert isinstance(notification_service, NotificationService)
 assert notification_service is container.resolve(NotificationService)
 assert notification_service.message_service is container.resolve(MessageService)
 ```
+
+For more information on how to use the `Container` class, refer to its code documentation.
 
 #### Provider
 
