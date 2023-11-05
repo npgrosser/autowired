@@ -17,8 +17,8 @@ pip install autowired
 The core concept of _autowired_ is the `Context` class.
 You can think of it as a declarative dependency injection container.
 
-To demonstrate how it works, let's look at an abstract example.
-First we define some components in plain Python:
+To demonstrate how it works, let's look at an example.
+First, we define some components in plain Python:
 
 ```python
 class ComponentA:
@@ -446,14 +446,15 @@ class HttpRequest:
 
 class HttpRequestHandler:
 
-    def __init__(self, database_service: DatabaseService):
+    def __init__(self, database_service: DatabaseService, http_request: HttpRequest):
         self.database_service = database_service
+        self.http_request = http_request
 
-    def handle_request(self, request: HttpRequest) -> str:
-        api_key = request.headers.get("Authorization") or ""
+    def handle_request(self) -> str:
+        api_key = self.http_request.headers.get("Authorization") or ""
         if api_key in self.database_service.get_api_keys():
             print("User is authorised")
-            user_id = request.parameters.get("user_id")
+            user_id = self.http_request.parameters.get("user_id")
             user_data = self.database_service.get_user_data(user_id)
             return json.dumps(user_data)
         else:
@@ -462,7 +463,7 @@ class HttpRequestHandler:
 
 class RequestContext(Context):
     http_request: HttpRequest = provided()
-    http_request_handler: HttpRequestHandler = autowired(http_request=http_request)
+    http_request_handler: HttpRequestHandler = autowired()
 
     def __init__(self, parent_context: Context, http_request: HttpRequest):
         self.derive_from(parent_context)
@@ -606,7 +607,7 @@ assert container.resolve(MessageService) is not container.resolve(MessageService
 Although FastAPI already provides a powerful dependency injection mechanism, you might want to reuse your
 autowired-based context classes.
 The following example shows how to use autowired in a FastAPI application.
-It does not aim to replace FastAPI's dependency injection, but rather demonstrates
+It does not aim to fully replace FastAPI's dependency injection, but rather demonstrates
 how to seamlessly combine both approaches.
 
 ```python
