@@ -280,20 +280,22 @@ class ApplicationSettings:
 class ApplicationContext(Context):
     notification_controller: NotificationController = autowired()
 
-    # we add a constructor to the context class to allow passing the settings
+    # we add a constructor to the context class to allow passing in the settings
     def __init__(self, settings: ApplicationSettings = ApplicationSettings()):
         self.settings = settings
 
     @cached_property
     def _notification_service(self) -> NotificationService:
-        # we use `self.autowire()` to resolve the dependencies of the notification service,
-        # while passing a subset of the dependencies explicitly as kwargs
         return self.autowire(
             NotificationService,
             all_caps=self.settings.all_caps_notifications
         )
+```
 
+Now, we can use the context class as before, with the added benefit of being able to configure the notification service
+via the `ApplicationSettings`.
 
+```python
 settings = ApplicationSettings(all_caps_notifications=True)
 ctx = ApplicationContext(settings=settings)
 ctx.notification_controller.notify(1, "Hello, User!")
@@ -385,7 +387,7 @@ applied to both autowired fields and properties, as shown in the table below:
 While component lifetimes dictate the policy for instantiation of components within a particular context, determining
 whether new instances are created or existing ones are reused, another essential dimension in component lifetime
 management exists: the lifetime of the context itself.
-See the next section for more details on this.
+The next sections will describe that in more detail.
 
 ### Scopes and Derived Contexts
 
@@ -490,7 +492,8 @@ print(response)
 
 ### Eager and Lazy Instantiation
 
-`autowired()` fields behave like `cached_property`s and are instantiated lazily, i.e., the first time they are accessed.
+By default, `autowired()` fields behave like `cached_property`s and are instantiated lazily, 
+i.e., the first time they are accessed.
 If this is not the desired behavior, you can use the `eager` parameter to force eager instantiation of the component.
 
 ```python
