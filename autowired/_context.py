@@ -127,7 +127,7 @@ def provided() -> Any:
 class _ContextMeta(type):
     """
     Metaclass for Context classes.
-    Converts all fields with autowired(...) value to cached properties.
+    Responsible for evaluating context properties (autowired and provided fields).
     """
 
     def __new__(mcs, name, bases, class_dict):
