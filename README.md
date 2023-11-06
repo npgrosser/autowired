@@ -18,7 +18,7 @@ The heart of _autowired_ is the `Context` class.
 You can think of it as a declarative dependency injection container.
 
 Let's look at an example.    
-First, we define some components in plain Python:
+We start by defining some components in plain Python:
 
 ```python
 class ComponentA:
