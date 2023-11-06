@@ -42,7 +42,7 @@ class MainComponent:
 
 ```
 
-Next, we'll define the `Context` class.
+Next, we'll define the `Context` class.    
 In our application code, we only need to interact with the `MainComponent`, hence it's the only component we explicitly
 define.
 
