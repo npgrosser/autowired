@@ -18,7 +18,6 @@ from autowired import (
     NotProvidedException,
     IllegalContextClass,
     MissingTypeAnnotation,
-    ProviderConflictException,
     provided,
     thread_local_cached_property,
 )
@@ -117,6 +116,28 @@ def test_unresolvable_dependency():
 
     with pytest.raises(UnresolvableDependencyException):
         print(ctx.service4)
+
+
+def test_context_provider_names():
+    class TestContext(Context):
+        service1: Service1 = autowired()
+        my_service_2: Service2 = autowired()
+
+    ctx = TestContext()
+    providers = ctx.container.get_providers()
+    assert len(providers) == 2
+
+    assert "service1" in [c.get_name() for c in providers]
+    assert "my_service_2" in [c.get_name() for c in providers]
+
+    class PascalCaseToSnakeCase:
+        pass
+
+    container = Container()
+    container.add(PascalCaseToSnakeCase())
+    providers = container.get_providers()
+    assert len(providers) == 1
+    assert providers[0].get_name() == "pascal_case_to_snake_case"
 
 
 def test_ambiguous_dependency():
@@ -219,9 +240,30 @@ def test_unregister_dependency():
 
 def test_conflicting_bean():
     container = Container()
-    container.add(Provider.from_instance(Service0()))
-    with pytest.raises(ProviderConflictException):
-        container.add(Provider.from_instance(Service0()))
+
+    class Component:
+        pass
+
+    container.add(Component())
+    container.add(Component())
+
+    named = Component()
+    container.add(Provider.from_instance(named, "named_component"))
+
+    with pytest.raises(AmbiguousDependencyException):
+        container.resolve(Component)
+
+    with pytest.raises(AmbiguousDependencyException):
+        container.resolve(Dependency("component", Component))
+
+    # should work with exact name
+    container.resolve(Dependency("named_component", Component))
+
+    container.add(Provider.from_instance(Component(), "named_component"))
+
+    # should not work with multiple components with the same name
+    with pytest.raises(AmbiguousDependencyException):
+        container.resolve(Dependency("named_component", Component))
 
 
 def test_use_correct_subtype():
@@ -519,15 +561,50 @@ def test_transient_autowired_field():
     assert id(ctx.service_a) == id(ctx.service_a)
 
 
+def test_untyped_component_arg():
+    class ServiceA:
+        def __init__(self, arg):
+            self.arg = arg
+
+    container = Container()
+
+    with pytest.raises(UnresolvableDependencyException):
+        container.autowire(ServiceA)
+
+
+def test_untyped_component_arg_with_default():
+    class SomeClass:
+        pass
+
+    default_value = SomeClass()
+
+    class SomeService:
+        def __init__(self, arg=default_value):
+            self.arg = arg
+
+    container = Container()
+
+    not_default_value = SomeClass()
+
+    container.add(not_default_value)
+    service = container.resolve(SomeService)
+
+    assert isinstance(service.arg, SomeClass)
+    assert service.arg is not default_value
+    assert service.arg is not_default_value
+
+
 def test_inherited_context():
     class ServiceA:
-        pass
+        def __init__(self, arg: str = ""):
+            self.arg = arg
+
+    class ServiceB:
+        def __init__(self, arg: str = ""):
+            self.arg = arg
 
     class BaseContext(Context):
         service_a: ServiceA = autowired()
-
-    class ServiceB:
-        pass
 
     class ExtendedContext(BaseContext):
         service_b: ServiceB = autowired()
@@ -536,6 +613,18 @@ def test_inherited_context():
 
     assert isinstance(ctx.service_a, ServiceA)
     assert isinstance(ctx.service_b, ServiceB)
+
+    class ExtendedContext2(BaseContext):
+        service_a: ServiceA = autowired(arg="foo")
+
+        @cached_property
+        def service_b(self) -> ServiceB:
+            return self.autowire(ServiceB, arg="bar")
+
+    ctx2 = ExtendedContext2()
+
+    assert ctx2.service_a.arg == "foo"
+    assert ctx2.service_b.arg == "bar"
 
 
 def test_provider_from_supplier():
