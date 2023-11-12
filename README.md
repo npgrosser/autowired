@@ -14,11 +14,11 @@ pip install autowired
 
 ## Quick Start
 
-The core concept of _autowired_ is the `Context` class.
+The heart of _autowired_ is the `Context` class.    
 You can think of it as a declarative dependency injection container.
 
-To demonstrate how it works, let's look at an example.
-First, we define some components in plain Python:
+Let's look at an example.    
+We start by defining some components in plain Python:
 
 ```python
 class ComponentA:
@@ -42,7 +42,7 @@ class MainComponent:
 
 ```
 
-Next, we'll define a context class.
+Next, we'll define the `Context` class.    
 In our application code, we only need to interact with the `MainComponent`, hence it's the only component we explicitly
 define.
 
