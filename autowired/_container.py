@@ -8,11 +8,10 @@ from typing import Type, Callable, Any, List, Optional, Union, Generic, Dict, Ty
 from ._exceptions import (
     MissingTypeAnnotation,
     AmbiguousDependencyException,
-    ProviderConflictException,
     IllegalAutoWireType,
     InstantiationError,
     UnresolvableDependencyException,
-    DependencyError,
+    AutowiredException,
 )
 from ._logging import logger
 
@@ -40,7 +39,7 @@ class Provider(ABC, Generic[_T]):
 
         :param dependency: The dependency specification.
         :param container: The container that is currently resolving the dependency.
-        :return: an instance that satisfies the given dependency specification
+        :return: An instance that satisfies the given dependency specification
         """
         ...
 
@@ -48,7 +47,7 @@ class Provider(ABC, Generic[_T]):
     def get_name(self) -> str:  # pragma: no cover
         """
         Returns the name of the provider.
-        Use by the container to resolve ambiguous dependencies.
+        Used by the container to resolve ambiguous dependencies.
         If a container contains multiple dependencies that satisfy the same dependency specification,
         the name of the dependency is compared to the provider name to try to resolve the ambiguity.
 
@@ -96,7 +95,7 @@ class Provider(ABC, Generic[_T]):
         :return: The newly created provider
         """
         if type is None:
-            # if getter is a class, use the class as type
+            # if getter is a class, use the class as a type
             if inspect.isclass(supplier):
                 type = supplier
             else:
@@ -139,7 +138,7 @@ _illegal_autowiredType_modules = ["builtins", "typing", "dataclasses", "abc"]
 
 class Container:
     """
-    A container for resolving and storing dependencies / providers.
+    A container for resolving and storing dependencies.
     """
 
     _providers: List[Provider]
@@ -166,6 +165,7 @@ class Container:
 
         :param dependency:
         :return:
+        :raises AmbiguousDependencyException: If multiple matching providers are found and there is no name match
         """
         candidates = self.get_providers(dependency)
 
@@ -186,7 +186,7 @@ class Container:
 
     def add(self, provider_or_instance: Union[Provider, Any], /):
         """
-        Adds a provider to the container.
+        Adds a provider or instance (as singleton provider) to the container.
 
         :param provider_or_instance: If not a provider, a singleton provider is created from the instance.
                                      The name of the provider is derived from the type name of the instance.
@@ -196,19 +196,13 @@ class Container:
         else:
             provider = provider_or_instance
 
-        for existing in self._providers:
-            if existing.get_name() == provider.get_name():
-                raise ProviderConflictException(
-                    f"Provider with name {provider.get_name()} "
-                    f"conflicts with existing provider {existing}"
-                )
         self._providers.append(provider)
 
     def remove(self, provider: Union[str, Provider, Type[_T]], /):
         """
         Remove a provider from the container.
 
-        :param provider: provider name or provider instance
+        :param provider: Provider name or provider instance
         """
 
         def predicate(p: Provider) -> bool:
@@ -232,10 +226,11 @@ class Container:
         If no existing provider satisfies the dependency specification,
         the container tries to auto-wire the object as defined by `self.autowire(...)`
         and stores the result instance as a new singleton provider.
+        The same is true for the dependencies of the object (recursively).
         If multiple matching providers are found,
         the name of the dependency is compared to the provider name to try to resolve the ambiguity.
 
-        :param dependency: dependency specification or target type
+        :param dependency: Dependency specification or target type
         :return: the resolved dependency
         :raises UnresolvableDependencyException: if the dependency cannot be resolved
         :raises AmbiguousDependencyException: if multiple matching providers are found and there is no name match
@@ -272,14 +267,12 @@ class Container:
         """
         Auto-wires an object of the given type. Meaning that all dependencies of the object are resolved
         as defined by `self.resolve(...)` and the object is initialized with the resolved dependencies.
-        The object itself is always a new instance and not automatically stored in the container.
+        In contrast to `self.resolve(...)`, this function does not store the result as a singleton provider.
 
         :param t:
         :param explicit_kw_args:
-        :return: the auto-wired object
-        :raises IllegalAutoWireType: if the type is not allowed to be auto-wired (e.g. built-in types)
-        :raises UnresolvableDependencyException: if resolving a dependency fails
-        :raises InitializationError: if initializing the object fails
+        :return: The auto-wired object
+        :raises AutowiredException: if the object cannot be auto-wired
         """
         logger.trace(
             f"Auto-wiring {t.__name__} with {len(explicit_kw_args)} explicit args"
@@ -304,7 +297,7 @@ class Container:
                 try:
                     auto = self.resolve(dep)
                     resolved_kw_args[dep.name] = auto
-                except DependencyError as e:
+                except AutowiredException as e:
                     if dep.required:
                         raise UnresolvableDependencyException(
                             f"Failed to resolve dependency {dep.name} "

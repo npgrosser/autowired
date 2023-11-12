@@ -17,23 +17,7 @@ class MissingTypeAnnotation(AutowiredException):
     pass
 
 
-class ProviderConflictException(AutowiredException):
-    """
-    Raised when a provider conflicts with an existing provider.
-    """
-
-    pass
-
-
-class DependencyError(AutowiredException, ABC):
-    """
-    Base class for all dependency-related errors.
-    """
-
-    pass
-
-
-class IllegalAutoWireType(DependencyError):
+class IllegalAutoWireType(AutowiredException):
     """
     Raised when an object of a type that is not allowed to be auto-wired is auto-wired.
     """
@@ -41,7 +25,7 @@ class IllegalAutoWireType(DependencyError):
     pass
 
 
-class AmbiguousDependencyException(DependencyError):
+class AmbiguousDependencyException(AutowiredException):
     """
     Raised when a dependency cannot be resolved because multiple candidates are found
     and none of them matches the name of the dependency.
@@ -50,7 +34,7 @@ class AmbiguousDependencyException(DependencyError):
     pass
 
 
-class UnresolvableDependencyException(DependencyError):
+class UnresolvableDependencyException(AutowiredException):
     """
     Raised when a dependency cannot be resolved.
     """
@@ -58,7 +42,7 @@ class UnresolvableDependencyException(DependencyError):
     pass
 
 
-class InstantiationError(DependencyError):
+class InstantiationError(AutowiredException):
     """
     Raised when an object cannot be instantiated.
     """
@@ -76,7 +60,7 @@ class ContextError(AutowiredException, ABC):
 
 class IllegalContextClass(ContextError):
     """
-    Raised when a class is used as a context class that is not allowed to be used as such.
+    Raised when a class is used as a context class not allowed to be used as such.
     """
 
     pass

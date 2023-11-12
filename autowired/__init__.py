@@ -1,7 +1,5 @@
 __all__ = [
     "AutowiredException",
-    "ProviderConflictException",
-    "DependencyError",
     "UnresolvableDependencyException",
     "AmbiguousDependencyException",
     "InstantiationError",
@@ -26,8 +24,6 @@ from ._container import Container, Dependency, Provider
 from ._context import Context, autowired, provided
 from ._exceptions import (
     AutowiredException,
-    ProviderConflictException,
-    DependencyError,
     UnresolvableDependencyException,
     AmbiguousDependencyException,
     InstantiationError,
