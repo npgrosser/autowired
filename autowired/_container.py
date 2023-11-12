@@ -133,7 +133,7 @@ class _SimpleProvider(Provider[_T]):
         return issubclass(self.type, dependency.type)
 
 
-_illegal_autowiredType_modules = ["builtins", "typing", "dataclasses", "abc"]
+_illegal_autowiredType_modules = ["builtins", "typing", "dataclasses", "abc", "object"]
 
 
 class Container:
@@ -315,15 +315,28 @@ class Container:
 
 def _get_dependencies_for_type(t: type) -> List[Dependency]:
     init = _get_actual_init(t)
-
+    dependencies = []
     if init:
         sig = inspect.signature(init)
-        return [
-            Dependency(name, param.annotation, param.default == inspect.Parameter.empty)
-            for name, param in sig.parameters.items()
-            if name != "self"
-        ]
-    return []
+
+        for name, param in sig.parameters.items():
+            if name == "self":
+                continue
+            annotation = param.annotation
+            default = param.default
+            has_default = default != inspect.Parameter.empty
+
+            if annotation == inspect.Parameter.empty:
+                if has_default:
+                    # falling back to the type of the default value
+                    annotation = type(param.default)
+                else:
+                    annotation = object
+
+            dependency = Dependency(name, annotation, not has_default)
+            dependencies.append(dependency)
+
+    return dependencies
 
 
 def _camel_to_snake(name: str) -> str:
