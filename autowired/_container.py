@@ -1,7 +1,7 @@
 import inspect
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import FunctionType
 from typing import Type, Callable, Any, List, Optional, Union, Generic, Dict, TypeVar
 
@@ -116,13 +116,7 @@ class Provider(ABC, Generic[_T]):
 class _SimpleProvider(Provider[_T]):
     name: str
     type: Type[_T]
-    getter: Callable[[], _T]
-
-    def __str__(self):
-        return f"Provider(name={self.name}, type={self.type.__name__})"
-
-    def __repr__(self):
-        return str(self)
+    getter: Callable[[], _T] = field(repr=False)
 
     def get_instance(self, dependency: Dependency, container: "Container") -> _T:
         return self.getter()
