@@ -14,6 +14,7 @@ from ._exceptions import (
     AutowiredException,
 )
 from ._logging import logger
+from ._typing_utils import is_subtype
 
 _T = TypeVar("_T")
 
@@ -130,7 +131,7 @@ class _SimpleProvider(Provider[_T]):
         return self.name
 
     def satisfies(self, dependency: Dependency) -> bool:
-        return issubclass(self.type, dependency.type)
+        return is_subtype(self.type, dependency.type)
 
 
 _illegal_autowiredType_modules = ["builtins", "typing", "dataclasses", "abc", "object"]

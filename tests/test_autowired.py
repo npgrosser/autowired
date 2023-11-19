@@ -1,3 +1,5 @@
+from typing import List
+
 import pytest
 
 import threading
@@ -855,3 +857,25 @@ def test_context_value_selector_direct():
     assert isinstance(ctx.test_service, TestService)
     assert ctx.test_service.service1 is ctx.service1
     assert ctx.test_service.foo == "bar"
+
+
+def test_generic_dependency():
+    @dataclass
+    class SomeData:
+        pass
+
+    @dataclass
+    class Service:
+        data: List[SomeData]
+
+    class TestContext(Context):
+        service: Service = autowired()
+
+        @cached_property
+        def data(self) -> List[SomeData]:
+            return [SomeData()]
+
+    ctx = TestContext()
+    assert isinstance(ctx.service, Service)
+    for data in ctx.service.data:
+        assert isinstance(data, SomeData)
