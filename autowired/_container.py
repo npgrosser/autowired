@@ -282,11 +282,9 @@ class Container:
         :return: The auto-wired object
         :raises AutowiredException: if the object cannot be auto-wired
         """
-        logger.trace(
-            f"Auto-wiring {t.__name__} with {len(explicit_kw_args)} explicit args"
-        )
+        logger.trace(f"Auto-wiring {t} with {len(explicit_kw_args)} explicit args")
         if t.__module__.split(".")[0] in _illegal_autowiredType_modules:
-            raise IllegalAutoWireType(f"Cannot auto-wire object of type {t.__name__}")
+            raise IllegalAutoWireType(f"Cannot auto-wire object of type {t}")
 
         dependencies = _get_dependencies_for_type(t)
 
@@ -309,7 +307,7 @@ class Container:
                     if dep.required:
                         raise UnresolvableDependencyException(
                             f"Failed to resolve dependency {dep.name} "
-                            f"of type {dep.type.__name__} for {t.__name__}. "
+                            f"of type {dep.type} for {t}. "
                         ) from e
 
         try:

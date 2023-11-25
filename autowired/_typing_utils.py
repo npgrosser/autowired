@@ -1,5 +1,9 @@
-from types import UnionType
 from typing import Type, get_args, get_origin, Union, Any, Optional, List, Tuple
+
+try:
+    from types import UnionType
+except ImportError:  # pragma: no cover
+    UnionType = None
 
 
 def is_subtype(t1: Type, t2: Type) -> bool:
@@ -70,12 +74,18 @@ def is_subtype(t1: Type, t2: Type) -> bool:
     return True
 
 
-def _as_union_types(t: Type | UnionType) -> tuple[Type, ...]:
+def _as_union_types(t) -> Tuple[Type, ...]:
     """
     Returns the types of a Union type, or a tuple containing only t if t is not a Union type.
     """
-    if isinstance(t, UnionType) or get_origin(t) is Union:
+
+    if get_origin(t) is Union:
         return get_args(t)
+
+    if UnionType is not None:
+        if get_origin(t) is UnionType:
+            return get_args(t)
+
     return (t,)
 
 

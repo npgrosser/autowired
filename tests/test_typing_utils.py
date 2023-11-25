@@ -104,14 +104,14 @@ else:
 def test_union_types(new_union_syntax: bool):
     def union(*args):
         if new_union_syntax:
-            return Union[args]
-        else:
             if len(args) == 1:
                 return args[0]
             if len(args) == 2:
                 return args[0] | args[1]
             if len(args) == 3:
                 return args[0] | args[1] | args[2]
+        else:
+            return Union[args]
 
     # case 1: both types are unions
     # 1.1: same types
