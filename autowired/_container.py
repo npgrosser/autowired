@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from types import FunctionType
 from typing import Type, Callable, Any, List, Optional, Union, Generic, Dict, TypeVar
+from ._component_scan import component_scan, Module
 
 from ._exceptions import (
     MissingTypeAnnotation,
@@ -110,6 +111,31 @@ class Provider(ABC, Generic[_T]):
             name = _camel_to_snake(type.__name__)
 
         return _SimpleProvider(name, type, supplier)
+
+    @staticmethod
+    def from_class(cls, container: "Container", transient: bool) -> "Provider[_T]":
+        def supplier():
+            return container.autowire(cls)
+
+        if not transient:
+            supplier = _cached(supplier)
+
+        return _SimpleProvider(_camel_to_snake(cls.__name__), cls, supplier)
+
+
+def _cached(supplier: Callable[[], _T]) -> Callable[[], _T]:
+    cached = False
+    result = None
+
+    def wrapper():
+        nonlocal cached
+        nonlocal result
+        if not cached:
+            result = supplier()
+            cached = True
+        return result
+
+    return wrapper
 
 
 @dataclass(frozen=True)
@@ -314,6 +340,21 @@ class Container:
             return t(**resolved_kw_args)
         except Exception as e:
             raise InstantiationError(f"Failed to initialize {t.__name__}") from e
+
+    # use component scan to add providers by type
+
+    def component_scan(self, root_module: Module) -> None:
+        """
+        Scans the given module and all submodules for classes annotated with `@component`.
+        Adds a singleton provider for each class found.
+
+        :param root_module: The root module to scan
+        """
+        for component_info in component_scan(root_module):
+            provider = Provider.from_class(
+                component_info.cls, self, component_info.transient
+            )
+            self.add(provider)
 
 
 # region utils

@@ -629,7 +629,7 @@ class PluginB(Plugin):
         print("Plugin B")
 
 
-class PluginController:
+class PluginManager:
     def __init__(self, plugins: list[Plugin]):
         self.plugins = plugins
 
@@ -639,7 +639,7 @@ class PluginController:
 
 
 class ApplicationContext(Context):
-    plugin_controller: PluginController = autowired()
+    plugin_manager: PluginManager = autowired()
 
 
 # usage
@@ -649,150 +649,78 @@ ctx = ApplicationContext()
 ctx.container.add(PluginA())
 ctx.container.add(PluginB())
 
-ctx.plugin_controller.run_all()
+ctx.plugin_manager.run_all()
 
 ```
 
----
+### Component Scan
 
-## Example Application — FastAPI
-
-Although FastAPI already provides a powerful dependency injection mechanism, you might want to reuse your
-autowired-based context classes.
-The following example shows how to use autowired in a FastAPI application.
-It does not aim to fully replace FastAPI's dependency injection, but rather demonstrates
-how to seamlessly combine both approaches.
+In many applications, you might want to automatically discover all components in a specific package.
+Like list injection, this can be useful for implementing a plugin system.
+Another common use case is to automatically discover all controllers in a web application to easily set up routing.
+You can use the `@component` decorator to mark a class as a component.
+When you call `component_scan()` on a container, it will automatically discover all components in the given package
+and add them to the container.
 
 ```python
-from dataclasses import dataclass
-from autowired import Context, autowired, provided
+# my_module/controllers/controller.py
+
+from abc import ABC, abstractmethod
 
 
-# Components
-
-@dataclass
-class DatabaseService:
-    conn_str: str
-
-    def load_allowed_tokens(self):
-        return ["123", "456", ""]
-
-    def get_user_name_by_id(self, user_id: int) -> str | None:
-        print(f"Loading user {user_id} from database {self.conn_str}")
-        d = {1: "John", 2: "Jane"}
-        return d.get(user_id)
+class Controller(ABC):
+    @abstractmethod
+    def run(self):
+        ...
 
 
-@dataclass
-class UserService:
-    db_service: DatabaseService
-
-    def get_user_name_by_id(self, user_id: int) -> str | None:
-        if user_id == 0:
-            return "admin"
-        return self.db_service.get_user_name_by_id(user_id)
+# my_module/controllers/controller1.py
+from autowired import component
+from .controller import Controller
 
 
-@dataclass
-class UserController:
-    user_service: UserService
-
-    def get_user(self, user_id: int) -> str:
-        user_name = self.user_service.get_user_name_by_id(user_id)
-        if user_name is None:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        return user_name
+@component
+class Controller1(Controller):
+    def run(self):
+        print("Starting Controller 1")
 
 
-# Application Settings and Context
+# my_module/controllers/controller2.py
+from autowired import component
+from .controller import Controller
 
 
-@dataclass
-class ApplicationSettings:
-    database_connection_string: str = "db://localhost"
+@component
+class Controller2(Controller):
+    def run(self):
+        print("Starting Controller 2")
 
 
-# Application Context
+# my_module/main.py
 
+from autowired import Context, autowired
+import my_module.controllers
+
+
+class ControllerManager:
+    def __init__(self, controllers: list[Controller]):
+        self.controllers = controllers
+
+    def start(self):
+        for controller in self.controllers:
+            controller.run()
 
 class ApplicationContext(Context):
-    user_controller: UserController = autowired()
-    database_service: DatabaseService = autowired(
-        lambda self: dict(conn_str=self.settings.database_connection_string)
-    )
-
-    def __init__(self, settings: ApplicationSettings = ApplicationSettings()):
-        self.settings = settings
+    controller_manager: ControllerManager = autowired()
+    
+    def __init__(self):
+        # register all components from the my_module.controllers package
+        self.container.component_scan(my_module.controllers)
 
 
-from fastapi import FastAPI, Request, Depends, HTTPException
+# usage
 
+ctx = ApplicationContext()
+ctx.controller_manager.start()
 
-# Request Scoped Service for the FastAPI Application
-
-
-@dataclass
-class RequestAuthService:
-    db_service: DatabaseService
-    request: Request
-
-    def is_authorised(self):
-        token = self.request.headers.get("Authorization") or ""
-        token = token.replace("Bearer ", "")
-        if token in self.db_service.load_allowed_tokens():
-            return True
-        return False
-
-
-# Request Context
-
-
-class RequestContext(Context):
-    request_auth_service: RequestAuthService = autowired()
-    request: Request = provided()
-
-    def __init__(self, parent_context: Context, request: Request):
-        self.derive_from(parent_context)
-        self.request = request
-
-
-# Setting up the FastAPI Application
-
-app = FastAPI()
-application_context = ApplicationContext()
-
-
-def request_context(request: Request):
-    return RequestContext(application_context, request)
-
-
-# We can seamlessly combine autowired's and FastAPIs dependency injection mechanisms
-def request_auth_service(request_context: RequestContext = Depends(request_context)):
-    return request_context.request_auth_service
-
-
-def user_controller():
-    return application_context.user_controller
-
-
-@app.get("/users/{user_id}")
-def get_user(
-        user_id: int,
-        request_auth_service: RequestAuthService = Depends(request_auth_service),
-        user_controller=Depends(user_controller),
-):
-    if request_auth_service.is_authorised():
-        return user_controller.get_user(user_id=int(user_id))
-    else:
-        return {"detail": "Not authorised"}
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app)
-
-    # http://127.0.0.1:8000/users/0 should now return "admin"
 ```
-
