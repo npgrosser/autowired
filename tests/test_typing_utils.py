@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 from typing import List, Dict, Tuple, Union, Any, Set
 
@@ -8,8 +10,7 @@ from autowired._typing_utils import is_subtype
 def test_non_generic_types():
     assert is_subtype(int, object) is True
     assert is_subtype(bool, int) is True
-    with pytest.raises(ValueError):
-        is_subtype(Union[int, str], object)
+    assert is_subtype(Union[int, str], object) is True
     assert is_subtype(int, Union[int, str]) is True
     assert is_subtype(int, str) is False
 
@@ -90,3 +91,51 @@ def test_mixed_generic_non_generic():
     assert is_subtype(Set, List[int]) is False
     assert is_subtype(List[int], set) is False
     assert is_subtype(set, List[int]) is False
+
+
+_version_info = sys.version_info
+if _version_info.major >= 3 and _version_info.minor >= 10:
+    new_union_syntax = [True, False]
+else:
+    new_union_syntax = [False]
+
+
+@pytest.mark.parametrize("new_union_syntax", new_union_syntax)
+def test_union_types(new_union_syntax: bool):
+    def union(*args):
+        if new_union_syntax:
+            return Union[args]
+        else:
+            if len(args) == 1:
+                return args[0]
+            if len(args) == 2:
+                return args[0] | args[1]
+            if len(args) == 3:
+                return args[0] | args[1] | args[2]
+
+    # case 1: both types are unions
+    # 1.1: same types
+    assert is_subtype(union(int, str), union(int, str)) is True
+    assert is_subtype(union(int, str), union(str, int)) is True
+    # 1.2: all types in left are subtypes of at least one type in right
+    assert is_subtype(union(int, str), union(object, str)) is True
+    assert is_subtype(union(int, str), union(str, object)) is True
+    # 1.3: not all types in left are subtypes of at least one type in right
+    assert is_subtype(union(int, str), union(float, str)) is False
+    assert is_subtype(union(int, str), union(str, float)) is False
+
+    assert is_subtype(union(int, str), Any) is True
+
+    # case 2: only the left type is union
+    assert is_subtype(union(int, str), int) is False
+    assert is_subtype(union(int, str), str) is False
+    assert is_subtype(union(int, str), object) is True
+
+    # case 3: only the right type is union
+    assert is_subtype(int, union(int, str)) is True
+    assert is_subtype(str, union(int, str)) is True
+    assert is_subtype(float, union(int, str)) is False
+
+    # case 4: one is Any
+    assert is_subtype(Any, union(int, str)) is True
+    assert is_subtype(union(int, str), Any) is True

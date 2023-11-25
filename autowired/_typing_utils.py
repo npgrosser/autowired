@@ -1,9 +1,10 @@
-from typing import Type, get_args, get_origin, Union, Any
+from types import UnionType
+from typing import Type, get_args, get_origin, Union, Any, Optional
 
 
 def is_subtype(t1: Type, t2: Type) -> bool:
     """
-    Checks if t1 is a subtype of t2.
+    Checks if t1 is a subtype of t2 (instances of t1 can be used where instances of t2 are expected).
     Similar to issubclass, but also works for generic types.
 
     Note that this is a simple implementation that does not take invariant type arguments into account.
@@ -15,6 +16,18 @@ def is_subtype(t1: Type, t2: Type) -> bool:
     :return:
     """
 
+    # region union type support
+    # union type similarity check rule: all types of t1 must be subtypes of at least one type of t2
+    t1_union_types = _as_union_types(t1)
+    t2_union_types = _as_union_types(t2)
+
+    if len(t1_union_types) > 1 or len(t2_union_types) > 1:
+        return all(
+            any(is_subtype(t1_arg, t2_arg) for t2_arg in t2_union_types)
+            for t1_arg in t1_union_types
+        )
+    # endregion
+
     if t1 is Any or t2 is Any:
         return True
 
@@ -24,14 +37,6 @@ def is_subtype(t1: Type, t2: Type) -> bool:
 
     origin1 = get_origin(t1) or t1
     origin2 = get_origin(t2) or t2
-
-    # origin1 must not be Union
-    if origin1 is Union:
-        raise ValueError("Union types are not supported for the first argument")
-
-    # union support: if origin2 is a union, check if t1 is a subtype of any of the union's types using recursion
-    if origin2 is Union:
-        return any(is_subtype(t1, arg) for arg in get_args(t2))
 
     # base condition: t1 must be a subclass of t2, otherwise we can already return False
     if not issubclass(origin1, origin2):
@@ -63,3 +68,12 @@ def is_subtype(t1: Type, t2: Type) -> bool:
             return False
 
     return True
+
+
+def _as_union_types(t: Type | UnionType) -> tuple[Type, ...]:
+    """
+    Returns the types of a Union type, or a tuple containing only t if t is not a Union type.
+    """
+    if isinstance(t, UnionType) or get_origin(t) is Union:
+        return get_args(t)
+    return (t,)
