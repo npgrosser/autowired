@@ -492,7 +492,7 @@ print(response)
 
 ### Eager and Lazy Instantiation
 
-By default, `autowired()` fields behave like `cached_property`s and are instantiated lazily, 
+By default, `autowired()` fields behave like `cached_property`s and are instantiated lazily,
 i.e., the first time they are accessed.
 If this is not the desired behavior, you can use the `eager` parameter to force eager instantiation of the component.
 
@@ -600,6 +600,56 @@ container.add(Provider.from_supplier(create_message_service))
 
 assert isinstance(container.resolve(MessageService), AllCapsMessageService)
 assert container.resolve(MessageService) is not container.resolve(MessageService)
+
+```
+
+### List Injection
+
+Sometimes, you might want to inject a list of all components that implement a specific interface.
+This is especially useful when you want to implement a plugin system.
+
+```python
+from autowired import Context, autowired
+from abc import ABC, abstractmethod
+
+
+class Plugin(ABC):
+    @abstractmethod
+    def run(self):
+        ...
+
+
+class PluginA(Plugin):
+    def run(self):
+        print("Plugin A")
+
+
+class PluginB(Plugin):
+    def run(self):
+        print("Plugin B")
+
+
+class PluginController:
+    def __init__(self, plugins: list[Plugin]):
+        self.plugins = plugins
+
+    def run_all(self):
+        for plugin in self.plugins:
+            plugin.run()
+
+
+class ApplicationContext(Context):
+    plugin_controller: PluginController = autowired()
+
+
+# usage
+
+ctx = ApplicationContext()
+
+ctx.container.add(PluginA())
+ctx.container.add(PluginB())
+
+ctx.plugin_controller.run_all()
 
 ```
 
