@@ -14,7 +14,7 @@ from ._exceptions import (
     AutowiredException,
 )
 from ._logging import logger
-from ._typing_utils import is_subtype
+from ._typing_utils import is_subtype, get_sequence_type
 
 _T = TypeVar("_T")
 
@@ -244,6 +244,19 @@ class Container:
             return existing.get_instance(dependency, self)
 
         logger.trace(f"Existing not found, auto-wiring {dependency}")
+
+        # region list injection special case
+        # check if the dependency type is a list
+        sequence_type, element_type = get_sequence_type(dependency.type)
+        if element_type is not None:
+            element_type: Any
+            element_dependency = Dependency(dependency.name, element_type, True)
+            elements = []
+            for provider in self.get_providers(element_dependency):
+                elements.append(provider.get_instance(element_dependency, self))
+            return sequence_type(elements)
+
+        # endregion
 
         result = self.autowire(dependency.type)
 

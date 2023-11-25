@@ -1,4 +1,5 @@
-from typing import List
+from abc import ABC
+from typing import List, Tuple
 
 import pytest
 
@@ -879,3 +880,58 @@ def test_generic_dependency():
     assert isinstance(ctx.service, Service)
     for data in ctx.service.data:
         assert isinstance(data, SomeData)
+
+
+def test_list_injection():
+    class Plugin(ABC):
+        pass
+
+    @dataclass
+    class PluginService:
+        plugins: List[Plugin]
+
+    class PluginA(Plugin):
+        pass
+
+    class PluginB(Plugin):
+        pass
+
+    def plugin_container():
+        container = Container()
+        container.add(PluginA())
+        container.add(PluginB())
+        return container
+
+    def assert_plugin_service(plugin_service, sequence_type):
+        assert isinstance(plugin_service, PluginService)
+        assert len(plugin_service.plugins) == 2
+        assert isinstance(plugin_service.plugins, sequence_type)
+        assert isinstance(plugin_service.plugins[0], PluginA)
+        assert isinstance(plugin_service.plugins[1], PluginB)
+
+    container = plugin_container()
+
+    plugin_service = container.resolve(PluginService)
+
+    assert_plugin_service(plugin_service, list)
+
+    # test with tuple
+
+    @dataclass
+    class PluginService:
+        plugins: Tuple[Plugin, ...]
+
+    container = plugin_container()
+
+    plugin_service = container.resolve(PluginService)
+    assert_plugin_service(plugin_service, tuple)
+
+    # test illegal tuple type
+    @dataclass
+    class PluginService:
+        plugins: Tuple[Plugin]
+
+    container = plugin_container()
+
+    with pytest.raises(UnresolvableDependencyException):
+        container.resolve(PluginService)

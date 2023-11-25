@@ -4,7 +4,7 @@ import pytest
 from typing import List, Dict, Tuple, Union, Any, Set
 
 # noinspection PyProtectedMember
-from autowired._typing_utils import is_subtype
+from autowired._typing_utils import is_subtype, get_list_element_type
 
 
 def test_non_generic_types():
@@ -139,3 +139,10 @@ def test_union_types(new_union_syntax: bool):
     # case 4: one is Any
     assert is_subtype(Any, union(int, str)) is True
     assert is_subtype(union(int, str), Any) is True
+
+
+def test_get_list_type():
+    assert get_list_element_type(List[int]) == int
+    assert get_list_element_type(List) is None
+    assert get_list_element_type(List[object]) is object
+    assert get_list_element_type(int) is None

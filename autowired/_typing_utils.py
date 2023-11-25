@@ -1,5 +1,5 @@
 from types import UnionType
-from typing import Type, get_args, get_origin, Union, Any, Optional
+from typing import Type, get_args, get_origin, Union, Any, Optional, List, Tuple
 
 
 def is_subtype(t1: Type, t2: Type) -> bool:
@@ -77,3 +77,33 @@ def _as_union_types(t: Type | UnionType) -> tuple[Type, ...]:
     if isinstance(t, UnionType) or get_origin(t) is Union:
         return get_args(t)
     return (t,)
+
+
+def get_list_element_type(t: Type) -> Optional[Type]:
+    """
+    Returns the type of the elements of a list type, or None if t is not a list type.
+    """
+    origin = get_origin(t)
+    if origin is list or origin is List:
+        args = get_args(t)
+        if args:
+            return args[0]
+    return None
+
+
+def get_sequence_type(t: Type) -> Union[Tuple[Type, Type], Tuple[None, None]]:
+    """
+    Returns the type of the elements of a list type, or None if t is not a list type.
+    """
+    origin = get_origin(t)
+    if origin is list or origin is List:
+        args = get_args(t)
+        if args:
+            return list, args[0]
+
+    if origin is tuple or origin is Tuple:
+        args = get_args(t)
+        if len(args) == 2 and args[1] is Ellipsis:
+            return tuple, args[0]
+
+    return None, None
