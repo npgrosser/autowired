@@ -20,6 +20,9 @@ def is_subtype(t1: Type, t2: Type) -> bool:
     :return:
     """
 
+    if t1 is t2:
+        return True
+
     # region union type support
     # union type similarity check rule: all types of t1 must be subtypes of at least one type of t2
     t1_union_types = _as_union_types(t1)
