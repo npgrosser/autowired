@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="autowired",
-    version="0.2.12",
+    version="0.2.13",
     description="A minimalistic dependency injection library for Python",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
