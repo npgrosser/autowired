@@ -1,15 +1,16 @@
 from autowired import component
+from tests.component_scan_test_module.controller import Controller
 
 
 @component
-class FileComponent:
+class FileComponent(Controller):
     pass
 
 
 @component
-class FileComponentInitExposed:
+class FileComponentInitExposed(Controller):
     pass
 
 
-class FileNotComponent:
+class FileNotComponent(Controller):
     pass

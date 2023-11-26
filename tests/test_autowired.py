@@ -1,3 +1,4 @@
+import dataclasses
 from abc import ABC
 from typing import List, Tuple
 
@@ -935,3 +936,72 @@ def test_list_injection():
 
     with pytest.raises(UnresolvableDependencyException):
         container.resolve(PluginService)
+
+
+def test_list_injection_no_existing():
+    @dataclass(frozen=True)
+    class Value:
+        v: int
+
+    @dataclass
+    class SomeData:
+        some_list: List[Value] = dataclasses.field(default_factory=lambda: [Value(0), Value(1)])
+
+    container = Container()
+
+    some_data = container.resolve(SomeData)
+
+    assert isinstance(some_data, SomeData)
+    assert isinstance(some_data.some_list, list)
+    # should use default if no value components are available
+    assert some_data.some_list == [Value(0), Value(1)]
+
+    container2 = Container()
+    container2.add(Provider.from_instance(Value(1)))
+    container2.add(Provider.from_instance(Value(2)))
+
+    some_data2 = container2.resolve(SomeData)
+
+    assert isinstance(some_data2, SomeData)
+    assert isinstance(some_data2.some_list, list)
+    # default should have priority even if value components are available
+    assert some_data2.some_list == [Value(0), Value(1)]
+
+    @dataclass
+    class SomeOtherData:
+        some_list_without_default: List[Value]
+
+    container3 = Container()
+    container3.add(Provider.from_instance(Value(1)))
+    container3.add(Provider.from_instance(Value(2)))
+    container3.add(Provider.from_instance(Value(3)))
+    container3.add(Provider.from_instance(Value(4)))
+
+    some_other_data = container3.resolve(SomeOtherData)
+
+    assert isinstance(some_other_data, SomeOtherData)
+    assert isinstance(some_other_data.some_list_without_default, list)
+    # no default, so should use all available value components
+    assert some_other_data.some_list_without_default == [
+        Value(1),
+        Value(2),
+        Value(3),
+        Value(4),
+    ]
+
+    container4 = Container()
+    # no defaults and no value components: should fail
+    with pytest.raises(UnresolvableDependencyException):
+        container4.resolve(SomeOtherData)
+
+    @dataclass
+    class SomeDataWithIntList:
+        some_list: List[int]
+
+    container5 = Container()
+    container5.add(Provider.from_instance(1))
+    container5.add(Provider.from_instance(2))
+
+    # list injection not for primitive types
+    with pytest.raises(UnresolvableDependencyException):
+        container5.resolve(SomeDataWithIntList)

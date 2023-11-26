@@ -4,6 +4,7 @@ import pytest
 
 import tests.component_scan_test_module
 from autowired import Container, Dependency
+from tests.component_scan_test_module import Controller
 
 
 def test_component_scan():
@@ -14,7 +15,7 @@ def test_component_scan():
     providers = container.get_providers()
     assert len(providers) == 7
 
-    components = container.resolve(Dependency("components", List[object]))
+    components = container.resolve(Dependency("components", List[Controller]))
 
     assert len(components) == 7
 

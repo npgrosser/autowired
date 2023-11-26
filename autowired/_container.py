@@ -1,9 +1,10 @@
+import dataclasses
 import inspect
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from types import FunctionType
-from typing import Type, Callable, Any, List, Optional, Union, Generic, Dict, TypeVar
+from typing import Type, Callable, Any, List, Optional, Union, Generic, Dict, TypeVar, cast
 from ._component_scan import component_scan, Module
 
 from ._exceptions import (
@@ -29,12 +30,13 @@ class Dependency:
     name: str
     type: Type[_T]
     required: bool = True
+    default_factory: Optional[Callable[[], _T]] = None
 
 
 class Provider(ABC, Generic[_T]):
     @abstractmethod
     def get_instance(
-        self, dependency: Dependency, container: "Container"
+            self, dependency: Dependency, container: "Container"
     ) -> _T:  # pragma: no cover
         """
         Returns an instance that satisfies the given dependency specification.
@@ -83,9 +85,9 @@ class Provider(ABC, Generic[_T]):
     # noinspection PyShadowingBuiltins
     @staticmethod
     def from_supplier(
-        supplier: Callable[[], _T],
-        type: Optional[Type[_T]] = None,
-        name: Optional[str] = None,
+            supplier: Callable[[], _T],
+            type: Optional[Type[_T]] = None,
+            name: Optional[str] = None,
     ) -> "Provider[_T]":
         """
         Creates a provider from the given supplier function.
@@ -142,7 +144,7 @@ def _cached(supplier: Callable[[], _T]) -> Callable[[], _T]:
 class _SimpleProvider(Provider[_T]):
     name: str
     type: Type[_T]
-    getter: Callable[[], _T] = field(repr=False)
+    getter: Callable[[], _T] = dataclasses.field(repr=False)
 
     def get_instance(self, dependency: Dependency, container: "Container") -> _T:
         return self.getter()
@@ -155,6 +157,10 @@ class _SimpleProvider(Provider[_T]):
 
 
 _illegal_autowiredType_modules = ["builtins", "typing", "dataclasses", "abc", "object"]
+
+
+def _is_illegal_type(t: Type[_T]) -> bool:
+    return t.__module__.split(".")[0] in _illegal_autowiredType_modules
 
 
 class Container:
@@ -274,13 +280,15 @@ class Container:
         # region list injection special case
         # check if the dependency type is a list
         sequence_type, element_type = get_sequence_type(dependency.type)
-        if element_type is not None:
+        if element_type is not None and not _is_illegal_type(element_type):
             element_type: Any
             element_dependency = Dependency(dependency.name, element_type, True)
             elements = []
             for provider in self.get_providers(element_dependency):
                 elements.append(provider.get_instance(element_dependency, self))
-            return sequence_type(elements)
+
+            if len(elements) > 0:
+                return sequence_type(elements)
 
         # endregion
 
@@ -294,9 +302,9 @@ class Container:
         return result
 
     def autowire(
-        self,
-        t: Type[_T],
-        **explicit_kw_args,
+            self,
+            t: Type[_T],
+            **explicit_kw_args,
     ) -> _T:
         """
         Auto-wires an object of the given type. Meaning that all dependencies of the object are resolved
@@ -309,7 +317,7 @@ class Container:
         :raises AutowiredException: if the object cannot be auto-wired
         """
         logger.trace(f"Auto-wiring {t} with {len(explicit_kw_args)} explicit args")
-        if t.__module__.split(".")[0] in _illegal_autowiredType_modules:
+        if _is_illegal_type(t):
             raise IllegalAutoWireType(f"Cannot auto-wire object of type {t}")
 
         dependencies = _get_dependencies_for_type(t)
@@ -325,7 +333,11 @@ class Container:
                 logger.trace(f"Found existing {existing} provider for {dep}")
 
                 resolved_kw_args[dep.name] = existing.get_instance(dep, self)
+            elif dep.default_factory is not None:
+                logger.trace(f"Using default factory for {dep}")
+                resolved_kw_args[dep.name] = dep.default_factory()
             else:
+                # try to resolve dependency
                 try:
                     auto = self.resolve(dep)
                     resolved_kw_args[dep.name] = auto
@@ -359,29 +371,50 @@ class Container:
 
 # region utils
 
+def _instance_to_supplier(instance: Any) -> Callable[[], Any]:
+    return lambda: instance
+
 
 def _get_dependencies_for_type(t: type) -> List[Dependency]:
     init = _get_actual_init(t)
     dependencies = []
     if init:
-        sig = inspect.signature(init)
+        if dataclasses.is_dataclass(t):
+            # noinspection PyDataclass
+            for field in dataclasses.fields(t):
+                annotation = field.type
 
-        for name, param in sig.parameters.items():
-            if name == "self":
-                continue
-            annotation = param.annotation
-            default = param.default
-            has_default = default != inspect.Parameter.empty
-
-            if annotation == inspect.Parameter.empty:
-                if has_default:
-                    # falling back to the type of the default value
-                    annotation = type(param.default)
+                if field.default != dataclasses.MISSING:
+                    default_factory = _instance_to_supplier(field.default)
+                elif field.default_factory != dataclasses.MISSING:
+                    default_factory = field.default_factory
                 else:
-                    annotation = object
+                    default_factory = None
 
-            dependency = Dependency(name, annotation, not has_default)
-            dependencies.append(dependency)
+                dependency = Dependency(
+                    field.name, annotation, field.default == dataclasses.MISSING, default_factory
+                )
+                dependencies.append(dependency)
+        else:
+            sig = inspect.signature(init)
+            for name, param in sig.parameters.items():
+                if name == "self":
+                    continue
+                annotation = param.annotation
+
+                default = param.default
+                has_default = default != inspect.Parameter.empty
+
+                if annotation == inspect.Parameter.empty:
+                    if has_default:
+                        # falling back to the type of the default value
+                        annotation = type(param.default)
+                    else:
+                        annotation = object
+
+                dependency = Dependency(name, annotation, not has_default,
+                                        _instance_to_supplier(default) if has_default else None)
+                dependencies.append(dependency)
 
     return dependencies
 
@@ -411,6 +444,5 @@ def _get_actual_init(t: type) -> Optional[FunctionType]:
             if init:
                 return init
         return None
-
 
 # endregion
