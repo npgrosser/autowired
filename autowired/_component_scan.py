@@ -1,11 +1,9 @@
 import importlib
 import inspect
 import pkgutil
-import sys
 from dataclasses import dataclass
+from types import ModuleType
 from typing import Type, Iterable, Set, Optional
-
-Module = type(sys)
 
 
 @dataclass
@@ -34,7 +32,7 @@ def get_component_info(cls) -> Optional[ClassComponentInfo]:
 
 
 class ClassScanner:
-    def __init__(self, root_module: Module):
+    def __init__(self, root_module):
         if not inspect.ismodule(root_module):
             raise TypeError(f"Expected a module, got {type(root_module)}")
         self.root_module = root_module
@@ -66,7 +64,7 @@ class ClassScanner:
                 yield cls
 
 
-def component_scan(root_module: Module) -> Iterable[ClassComponentInfo]:
+def component_scan(root_module: ModuleType) -> Iterable[ClassComponentInfo]:
     scanner = ClassScanner(root_module)
     component_infos = (get_component_info(cls) for cls in scanner.get_classes())
     return (c for c in component_infos if c is not None)

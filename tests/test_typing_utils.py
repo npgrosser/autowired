@@ -111,7 +111,12 @@ def test_union_types(new_union_syntax: bool):
             if len(args) == 3:
                 return args[0] | args[1] | args[2]
         else:
-            return Union[args]
+            if len(args) == 1:
+                return args[0]
+            if len(args) == 2:
+                return Union[args[0], args[1]]
+            if len(args) == 3:
+                return Union[args[0], args[1], args[2]]
 
     # case 1: both types are unions
     # 1.1: same types

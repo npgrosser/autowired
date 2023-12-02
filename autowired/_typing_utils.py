@@ -3,7 +3,7 @@ from typing import Type, get_args, get_origin, Union, Any, Optional, List, Tuple
 try:
     from types import UnionType
 except ImportError:  # pragma: no cover
-    UnionType = None
+    UnionType = None  # type: ignore
 
 
 def is_subtype(t1: Type, t2: Type) -> bool:

@@ -9,4 +9,4 @@ except ImportError:  # pragma: no cover
         def trace(self, msg: str):
             logging.debug(msg)
 
-    logger = _SimpleLogger()
+    logger = _SimpleLogger()  # type: ignore

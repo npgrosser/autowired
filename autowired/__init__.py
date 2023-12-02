@@ -17,11 +17,10 @@ __all__ = [
     "autowired",
     "provided",
     "component",
-    "Module",
 ]
 
 from functools import cached_property
-from ._component_scan import component, Module
+from ._component_scan import component
 
 from ._container import Container, Dependency, Provider
 from ._context import Context, autowired, provided

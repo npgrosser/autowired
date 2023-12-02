@@ -4,7 +4,7 @@ import threading
 from abc import ABC
 from collections import defaultdict
 from functools import cached_property
-from typing import Optional, Union, Any, Callable, Dict, Type, List, TypeVar
+from typing import Optional, Union, Any, Callable, Dict, Type, List, TypeVar, cast
 from dataclasses import dataclass
 from ._container import Provider, Container
 from ._exceptions import (
@@ -40,7 +40,7 @@ class _ContextValueSelector:
 
 
 class _ContextProperty(ABC, _ContextValueSelector):
-    name: str = None
+    name: Optional[str] = None
 
     def __setattr__(self, key, value):
         if key == "name":
@@ -174,7 +174,8 @@ class _ContextMeta(type):
 
         result = super().__new__(mcs, name, bases, class_dict)
 
-        def __getattribute__(self, item):
+        def __getattribute__(self, *args, **_kwargs):
+            item = args[0]
             attr_value = super(result, self).__getattribute__(item)
 
             if not isinstance(attr_value, _Autowired):
@@ -247,7 +248,7 @@ class Context(metaclass=_ContextMeta):
 
         return container
 
-    def autowire(self, t: Union[Type[_T], type], **explicit_kw_args) -> _T:
+    def autowire(self, t: Type[_T], **explicit_kw_args) -> _T:
         return self.container.autowire(t, **explicit_kw_args)
 
 
@@ -257,11 +258,11 @@ class Context(metaclass=_ContextMeta):
 @dataclass(frozen=True)
 class _PropertyInfo:
     name: str
-    type: Type[_T]
+    type: Type[object]
 
 
 @dataclass
-class _PropertyGetter(Callable[[], Any]):
+class _PropertyGetter:
     obj: Any
     property: _PropertyInfo
 
@@ -289,7 +290,7 @@ def _get_annotations_for_type(t: type) -> Dict[str, Any]:
     return annotations
 
 
-def _get_field_type(field_name: str, obj: Any) -> Type[_T]:
+def _get_field_type(field_name: str, obj: Any) -> Type[object]:
     annotations = _get_annotations_for_type(type(obj))
     field_type = annotations.get(field_name, None)
     if field_type is None:
@@ -315,6 +316,7 @@ def _get_obj_properties(self) -> List[_PropertyInfo]:
                 # try to get from class annotations
                 prop_type = type(self).__annotations__.get(name, None)
 
+            prop_type = cast(Type[object], prop_type)
             properties.append(_PropertyInfo(name, prop_type))
         elif isinstance(attr, _Autowired) or isinstance(attr, _Provided):
             properties.append(_PropertyInfo(name, _get_field_type(name, self)))

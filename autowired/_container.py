@@ -3,10 +3,20 @@ import inspect
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from types import FunctionType
-from typing import Type, Callable, Any, List, Optional, Union, Generic, Dict, TypeVar, cast
-from ._component_scan import component_scan, Module
+from types import FunctionType, ModuleType
+from typing import (
+    Type,
+    Callable,
+    Any,
+    List,
+    Optional,
+    Union,
+    Generic,
+    Dict,
+    TypeVar,
+)
 
+from ._component_scan import component_scan
 from ._exceptions import (
     MissingTypeAnnotation,
     AmbiguousDependencyException,
@@ -22,7 +32,7 @@ _T = TypeVar("_T")
 
 
 @dataclass(frozen=True)
-class Dependency:
+class Dependency(Generic[_T]):
     """
     A dependency specification.
     """
@@ -36,7 +46,7 @@ class Dependency:
 class Provider(ABC, Generic[_T]):
     @abstractmethod
     def get_instance(
-            self, dependency: Dependency, container: "Container"
+        self, dependency: Dependency, container: "Container"
     ) -> _T:  # pragma: no cover
         """
         Returns an instance that satisfies the given dependency specification.
@@ -70,7 +80,7 @@ class Provider(ABC, Generic[_T]):
         ...
 
     @staticmethod
-    def from_instance(instance: _T, name: str = None) -> "Provider[_T]":
+    def from_instance(instance: _T, name: Optional[str] = None) -> "Provider[_T]":
         """
         Creates a singleton provider from the given instance.
 
@@ -85,9 +95,9 @@ class Provider(ABC, Generic[_T]):
     # noinspection PyShadowingBuiltins
     @staticmethod
     def from_supplier(
-            supplier: Callable[[], _T],
-            type: Optional[Type[_T]] = None,
-            name: Optional[str] = None,
+        supplier: Callable[[], _T],
+        type: Optional[Type[_T]] = None,
+        name: Optional[str] = None,
     ) -> "Provider[_T]":
         """
         Creates a provider from the given supplier function.
@@ -280,8 +290,11 @@ class Container:
         # region list injection special case
         # check if the dependency type is a list
         sequence_type, element_type = get_sequence_type(dependency.type)
-        if element_type is not None and not _is_illegal_type(element_type):
-            element_type: Any
+        if (
+            element_type is not None
+            and sequence_type is not None
+            and not _is_illegal_type(element_type)
+        ):
             element_dependency = Dependency(dependency.name, element_type, True)
             elements = []
             for provider in self.get_providers(element_dependency):
@@ -302,9 +315,9 @@ class Container:
         return result
 
     def autowire(
-            self,
-            t: Type[_T],
-            **explicit_kw_args,
+        self,
+        t: Type[_T],
+        **explicit_kw_args,
     ) -> _T:
         """
         Auto-wires an object of the given type. Meaning that all dependencies of the object are resolved
@@ -339,7 +352,7 @@ class Container:
             else:
                 # try to resolve dependency
                 try:
-                    auto = self.resolve(dep)
+                    auto: Any = self.resolve(dep)
                     resolved_kw_args[dep.name] = auto
                 except AutowiredException as e:
                     if dep.required:
@@ -355,7 +368,7 @@ class Container:
 
     # use component scan to add providers by type
 
-    def component_scan(self, root_module: Module) -> None:
+    def component_scan(self, root_module: ModuleType) -> None:
         """
         Scans the given module and all submodules for classes annotated with `@component`.
         Adds a singleton provider for each class found.
@@ -363,13 +376,14 @@ class Container:
         :param root_module: The root module to scan
         """
         for component_info in component_scan(root_module):
-            provider = Provider.from_class(
+            provider: Provider = Provider.from_class(
                 component_info.cls, self, component_info.transient
             )
             self.add(provider)
 
 
 # region utils
+
 
 def _instance_to_supplier(instance: Any) -> Callable[[], Any]:
     return lambda: instance
@@ -392,7 +406,10 @@ def _get_dependencies_for_type(t: type) -> List[Dependency]:
                     default_factory = None
 
                 dependency = Dependency(
-                    field.name, annotation, field.default == dataclasses.MISSING, default_factory
+                    field.name,
+                    annotation,
+                    field.default == dataclasses.MISSING,
+                    default_factory,
                 )
                 dependencies.append(dependency)
         else:
@@ -412,8 +429,12 @@ def _get_dependencies_for_type(t: type) -> List[Dependency]:
                     else:
                         annotation = object
 
-                dependency = Dependency(name, annotation, not has_default,
-                                        _instance_to_supplier(default) if has_default else None)
+                dependency = Dependency(
+                    name,
+                    annotation,
+                    not has_default,
+                    _instance_to_supplier(default) if has_default else None,
+                )
                 dependencies.append(dependency)
 
     return dependencies
@@ -424,7 +445,7 @@ def _camel_to_snake(name: str) -> str:
 
 
 def _group_by(key_fn: Callable[[Any], Any], items: List[Any]) -> Dict[Any, List[Any]]:
-    result = {}
+    result: Dict[Any, List[Any]] = {}
     for item in items:
         key = key_fn(item)
         if key not in result:
@@ -444,5 +465,6 @@ def _get_actual_init(t: type) -> Optional[FunctionType]:
             if init:
                 return init
         return None
+
 
 # endregion
